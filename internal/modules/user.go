@@ -54,17 +54,38 @@ func (m *UserModule) Verify(cfg *system.UserConfig) *VerifyResult {
 		})
 	}
 
+	if cfg.PasswordlessSudo {
+		sudoersPath := "/etc/sudoers.d/safeup-" + cfg.Username
+		data, err := os.ReadFile(sudoersPath)
+		hasNopasswd := err == nil && strings.Contains(string(data), "NOPASSWD")
+		result.Checks = append(result.Checks, Check{
+			Name:     "passwordless sudo",
+			Status:   boolCheck(hasNopasswd),
+			Expected: "configured",
+			Actual:   ternary(hasNopasswd, "configured", "missing"),
+		})
+	}
+
 	return result
 }
 
-func (m *UserModule) Apply(username, authorizedKey string) error {
-	if username == "" {
+func (m *UserModule) Apply(cfg *system.UserConfig) error {
+	if cfg == nil || cfg.Username == "" {
 		return nil
 	}
 
+	username := cfg.Username
+	authorizedKey := cfg.AuthorizedKey
+
 	result, err := system.Run("id", "-u", username)
 	if err == nil && result.ExitCode == 0 {
-		return addAuthorizedKey(username, authorizedKey)
+		if err := addAuthorizedKey(username, authorizedKey); err != nil {
+			return err
+		}
+		if err := setPassword(username, cfg.Password); err != nil {
+			return err
+		}
+		return configureSudo(cfg)
 	}
 
 	cmd := exec.Command("useradd", "-m", "-s", "/bin/bash", username)
@@ -77,7 +98,55 @@ func (m *UserModule) Apply(username, authorizedKey string) error {
 		return fmt.Errorf("usermod sudo failed: %w: %s", err, string(out))
 	}
 
-	return addAuthorizedKey(username, authorizedKey)
+	if err := addAuthorizedKey(username, authorizedKey); err != nil {
+		return err
+	}
+
+	if err := setPassword(username, cfg.Password); err != nil {
+		return err
+	}
+
+	return configureSudo(cfg)
+}
+
+func setPassword(username, password string) error {
+	password = strings.TrimSpace(password)
+	if password == "" {
+		return nil
+	}
+
+	cmd := exec.Command("chpasswd")
+	cmd.Stdin = strings.NewReader(username + ":" + password + "\n")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("chpasswd failed: %w: %s", err, string(out))
+	}
+	return nil
+}
+
+func configureSudo(cfg *system.UserConfig) error {
+	sudoersPath := "/etc/sudoers.d/safeup-" + cfg.Username
+	if !cfg.PasswordlessSudo {
+		os.Remove(sudoersPath)
+		return nil
+	}
+
+	content := cfg.Username + " ALL=(ALL) NOPASSWD:ALL\n"
+
+	if err := os.WriteFile(sudoersPath, []byte(content), 0440); err != nil {
+		return fmt.Errorf("cannot write sudoers: %w", err)
+	}
+
+	result, err := system.Run("visudo", "-c", "-f", sudoersPath)
+	if err != nil {
+		os.Remove(sudoersPath)
+		return fmt.Errorf("visudo check failed: %w", err)
+	}
+	if result.ExitCode != 0 {
+		os.Remove(sudoersPath)
+		return fmt.Errorf("invalid sudoers: %s", result.Stderr)
+	}
+
+	return nil
 }
 
 func addAuthorizedKey(username, pubKey string) error {

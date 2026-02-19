@@ -124,6 +124,8 @@ func runInit(cmd *cobra.Command, args []string) error {
 
 	userCfg := system.UserConfig{}
 	userName := ""
+	passwordlessSudo := true
+	userPassword := ""
 	sshPort := sshCfg.Port
 	portsStr := strings.Join(ufwCfg.AllowedPorts, ", ")
 	maxRetryStr := strconv.Itoa(f2bCfg.MaxRetry)
@@ -229,6 +231,37 @@ func runInit(cmd *cobra.Command, args []string) error {
 						return nil
 					}),
 				value: func() string { return sshKey[:min(30, len(sshKey))] + "…" },
+			},
+			wizardStep{
+				section: "Create User",
+				label:   "Passwordless sudo",
+				field: huh.NewConfirm().
+					Title("Passwordless sudo for this user?").
+					Description(
+						"Allow sudo without entering a password. Convenient for single-user\n"+
+							"servers where SSH key is the main security. If no, provide a\n"+
+							"password in the next step for sudo authentication.\n\n"+
+							"Default: Yes").
+					Value(&passwordlessSudo),
+				value: func() string { return ternaryStr(passwordlessSudo, "yes", "no") },
+			},
+			wizardStep{
+				section: "Create User",
+				label:   "Password for sudo",
+				field: huh.NewInput().
+					Title("Password for sudo").
+					Description(
+						"Only needed if you chose password required for sudo. Leave empty\n"+
+							"to set later with 'sudo passwd <user>'.").
+					Value(&userPassword).
+					Password(true).
+					Validate(func(s string) error { return nil }),
+				value: func() string {
+					if userPassword == "" {
+						return "—"
+					}
+					return "••••••••"
+				},
 			},
 		)
 	}
@@ -486,6 +519,8 @@ func runInit(cmd *cobra.Command, args []string) error {
 	if contains(selectedFeatures, "user") {
 		userCfg.Username = strings.TrimSpace(userName)
 		userCfg.AuthorizedKey = strings.TrimSpace(sshKey)
+		userCfg.PasswordlessSudo = passwordlessSudo
+		userCfg.Password = userPassword
 		sshCfg.AuthorizedKeyUser = userCfg.Username
 	} else {
 		sshCfg.AuthorizedKey = strings.TrimSpace(sshKey)
@@ -557,7 +592,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 		applyFn := func() {
 			if contains(selectedFeatures, "user") && userCfg.Username != "" {
 				m := &modules.UserModule{}
-				results = append(results, applyResult{m.Name(), m.Apply(userCfg.Username, userCfg.AuthorizedKey)})
+				results = append(results, applyResult{m.Name(), m.Apply(&userCfg)})
 			}
 			if contains(selectedFeatures, "ssh") {
 				m := &modules.SSHModule{}
@@ -663,8 +698,12 @@ func buildSummary(features []string, user *system.UserConfig, ssh *system.SSHCon
 
 	if contains(features, "user") && user.Username != "" {
 		lines = append(lines, "Create User")
-		lines = append(lines, fmt.Sprintf("  Username:       %s", user.Username))
-		lines = append(lines, fmt.Sprintf("  SSH key:        %s", ternaryStr(user.AuthorizedKey != "", "yes", "no")))
+		lines = append(lines, fmt.Sprintf("  Username:         %s", user.Username))
+		lines = append(lines, fmt.Sprintf("  SSH key:          %s", ternaryStr(user.AuthorizedKey != "", "yes", "no")))
+		lines = append(lines, fmt.Sprintf("  Passwordless sudo: %s", ternaryStr(user.PasswordlessSudo, "yes", "no")))
+		if !user.PasswordlessSudo {
+			lines = append(lines, fmt.Sprintf("  Password for sudo: %s", ternaryStr(user.Password != "", "set", "set later with passwd")))
+		}
 		lines = append(lines, "")
 	}
 

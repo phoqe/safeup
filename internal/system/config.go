@@ -20,8 +20,10 @@ type SavedConfig struct {
 }
 
 type UserConfig struct {
-	Username      string `json:"username"`
-	AuthorizedKey string `json:"authorized_key,omitempty"`
+	Username         string `json:"username"`
+	AuthorizedKey    string `json:"authorized_key,omitempty"`
+	PasswordlessSudo bool   `json:"passwordless_sudo"`
+	Password         string `json:"-"`
 }
 
 type SSHConfig struct {
