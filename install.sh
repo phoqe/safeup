@@ -13,7 +13,7 @@ main() {
 
     if [ "$(id -u)" -ne 0 ]; then
         echo "Error: this installer must be run as root." >&2
-        echo "Try: curl -fsSL https://raw.githubusercontent.com/${REPO}/main/install.sh | sudo bash" >&2
+        echo "Try: curl -fsSL https://raw.githubusercontent.com/${REPO}/master/install.sh | sudo bash" >&2
         exit 1
     fi
 

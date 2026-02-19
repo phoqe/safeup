@@ -35,22 +35,24 @@ func runInit(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	fmt.Print("\033[H\033[2J")
+
 	var selectedFeatures []string
 
 	sshCfg := system.SSHConfig{
 		DisableRootLogin:    true,
 		DisablePasswordAuth: true,
-		Port:                "22",
+		Port:                "2222",
 	}
 
 	ufwCfg := system.UFWConfig{
-		AllowedPorts: []string{"22/tcp", "80/tcp", "443/tcp"},
+		AllowedPorts: []string{"2222/tcp", "80/tcp", "443/tcp"},
 		RateLimitSSH: true,
 	}
 
 	f2bCfg := system.Fail2BanConfig{
-		MaxRetry: 5,
-		BanTime:  3600,
+		MaxRetry: 3,
+		BanTime:  86400,
 	}
 
 	upgCfg := system.UpgradesConfig{
@@ -66,10 +68,20 @@ func runInit(cmd *cobra.Command, args []string) error {
 	titleStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("212"))
 	subtitleStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
 
+	banner := `
+   _____ ___    ____________  ______
+  / ___//   |  / ____/ ____/ / / / _ \
+  \__ \/ /| | / /_  / __/  / / / / __/
+ ___/ / ___ |/ __/ / /____/ /_/ / ___/
+/____/_/  |_/_/   /_____/\____/_/   `
+
+	fmt.Println(titleStyle.Render(banner))
 	fmt.Println()
-	fmt.Println(titleStyle.Render("  SafeUp"))
 	fmt.Println(subtitleStyle.Render("  Interactive VPS hardening for Ubuntu"))
 	fmt.Println(subtitleStyle.Render("  Detected: " + osInfo.PrettyName))
+	fmt.Println()
+	fmt.Println(subtitleStyle.Render("  Sensible defaults have been selected for each option."))
+	fmt.Println(subtitleStyle.Render("  Feel free to adjust them to suit your setup."))
 	fmt.Println()
 
 	featureForm := huh.NewForm(
@@ -78,10 +90,10 @@ func runInit(cmd *cobra.Command, args []string) error {
 				Title("Select hardening features").
 				Description("All are recommended. Deselect any you want to skip.").
 				Options(
-					huh.NewOption("SSH Hardening — disable root login, password auth, limit retries", "ssh").Selected(true),
-					huh.NewOption("UFW Firewall — deny incoming by default, allow specific ports", "ufw").Selected(true),
-					huh.NewOption("fail2ban — ban IPs after failed login attempts", "fail2ban").Selected(true),
-					huh.NewOption("Unattended Upgrades — automatic security updates", "upgrades").Selected(true),
+					huh.NewOption("SSH Hardening", "ssh").Selected(true),
+					huh.NewOption("UFW Firewall", "ufw").Selected(true),
+					huh.NewOption("fail2ban", "fail2ban").Selected(true),
+					huh.NewOption("Unattended Upgrades", "upgrades").Selected(true),
 				).
 				Value(&selectedFeatures),
 		),
@@ -99,86 +111,108 @@ func runInit(cmd *cobra.Command, args []string) error {
 	var groups []*huh.Group
 
 	if contains(selectedFeatures, "ssh") {
-		groups = append(groups, huh.NewGroup(
-			huh.NewConfirm().
-				Title("Disable root login via SSH?").
-				Description("Recommended. You should use a regular user with sudo instead.").
-				Value(&sshCfg.DisableRootLogin),
-			huh.NewConfirm().
-				Title("Disable password authentication?").
-				Description("Recommended. Use SSH keys instead.").
-				Value(&sshCfg.DisablePasswordAuth),
-			huh.NewInput().
-				Title("SSH port").
-				Description("Change from default 22 to reduce noise. Leave as 22 if unsure.").
-				Value(&sshPort).
-				Validate(func(s string) error {
-					port, err := strconv.Atoi(s)
-					if err != nil || port < 1 || port > 65535 {
-						return fmt.Errorf("enter a valid port (1-65535)")
-					}
-					return nil
-				}),
-		).Title("SSH Hardening").Description("Configure SSH daemon security"))
+		groups = append(groups,
+			huh.NewGroup(
+				huh.NewConfirm().
+					Title("Disable root login via SSH?").
+					Description("Recommended. You should use a regular user with sudo instead.").
+					Inline(true).
+					Value(&sshCfg.DisableRootLogin),
+			),
+			huh.NewGroup(
+				huh.NewConfirm().
+					Title("Disable password authentication?").
+					Description("Recommended. Use SSH keys instead.").
+					Inline(true).
+					Value(&sshCfg.DisablePasswordAuth),
+			),
+			huh.NewGroup(
+				huh.NewInput().
+					Title("SSH port").
+					Description("Change from default 22 to reduce noise.").
+					Value(&sshPort).
+					Validate(func(s string) error {
+						port, err := strconv.Atoi(s)
+						if err != nil || port < 1 || port > 65535 {
+							return fmt.Errorf("enter a valid port (1-65535)")
+						}
+						return nil
+					}),
+			),
+		)
 	}
 
 	if contains(selectedFeatures, "ufw") {
-		groups = append(groups, huh.NewGroup(
-			huh.NewInput().
-				Title("Allowed incoming ports").
-				Description("Comma-separated, e.g. 22/tcp, 80/tcp, 443/tcp").
-				Value(&portsStr).
-				Validate(func(s string) error {
-					if strings.TrimSpace(s) == "" {
-						return fmt.Errorf("at least one port is required")
-					}
-					return nil
-				}),
-			huh.NewConfirm().
-				Title("Rate-limit SSH port?").
-				Description("Limits connection attempts to prevent brute force.").
-				Value(&ufwCfg.RateLimitSSH),
-		).Title("UFW Firewall").Description("Configure firewall rules"))
+		groups = append(groups,
+			huh.NewGroup(
+				huh.NewInput().
+					Title("Allowed incoming ports").
+					Description("Comma-separated, e.g. 2222/tcp, 80/tcp, 443/tcp").
+					Value(&portsStr).
+					Validate(func(s string) error {
+						if strings.TrimSpace(s) == "" {
+							return fmt.Errorf("at least one port is required")
+						}
+						return nil
+					}),
+			),
+			huh.NewGroup(
+				huh.NewConfirm().
+					Title("Rate-limit SSH port?").
+					Description("Limits connection attempts to prevent brute force.").
+					Inline(true).
+					Value(&ufwCfg.RateLimitSSH),
+			),
+		)
 	}
 
 	if contains(selectedFeatures, "fail2ban") {
-		groups = append(groups, huh.NewGroup(
-			huh.NewInput().
-				Title("Max retries before ban").
-				Description("Number of failed attempts before an IP is banned.").
-				Value(&maxRetryStr).
-				Validate(func(s string) error {
-					n, err := strconv.Atoi(s)
-					if err != nil || n < 1 {
-						return fmt.Errorf("enter a positive number")
-					}
-					return nil
-				}),
-			huh.NewInput().
-				Title("Ban time (seconds)").
-				Description("How long to ban an IP. 3600 = 1 hour, 86400 = 1 day.").
-				Value(&banTimeStr).
-				Validate(func(s string) error {
-					n, err := strconv.Atoi(s)
-					if err != nil || n < 60 {
-						return fmt.Errorf("enter at least 60 seconds")
-					}
-					return nil
-				}),
-		).Title("fail2ban").Description("Configure brute-force protection"))
+		groups = append(groups,
+			huh.NewGroup(
+				huh.NewInput().
+					Title("Max retries before ban").
+					Description("Number of failed attempts before an IP is banned.").
+					Value(&maxRetryStr).
+					Validate(func(s string) error {
+						n, err := strconv.Atoi(s)
+						if err != nil || n < 1 {
+							return fmt.Errorf("enter a positive number")
+						}
+						return nil
+					}),
+			),
+			huh.NewGroup(
+				huh.NewInput().
+					Title("Ban time (seconds)").
+					Description("How long to ban an IP. 3600 = 1 hour, 86400 = 1 day.").
+					Value(&banTimeStr).
+					Validate(func(s string) error {
+						n, err := strconv.Atoi(s)
+						if err != nil || n < 60 {
+							return fmt.Errorf("enter at least 60 seconds")
+						}
+						return nil
+					}),
+			),
+		)
 	}
 
 	if contains(selectedFeatures, "upgrades") {
-		groups = append(groups, huh.NewGroup(
-			huh.NewConfirm().
-				Title("Enable automatic reboot when required?").
-				Description("Some updates need a reboot. This allows it at a set time.").
-				Value(&upgCfg.AutoReboot),
-			huh.NewInput().
-				Title("Reboot time (HH:MM)").
-				Description("When to reboot if needed. Choose a low-traffic time.").
-				Value(&upgCfg.RebootTime),
-		).Title("Unattended Upgrades").Description("Configure automatic security updates"))
+		groups = append(groups,
+			huh.NewGroup(
+				huh.NewConfirm().
+					Title("Enable automatic reboot when required?").
+					Description("Some updates need a reboot. This allows it at a set time.").
+					Inline(true).
+					Value(&upgCfg.AutoReboot),
+			),
+			huh.NewGroup(
+				huh.NewInput().
+					Title("Reboot time (HH:MM)").
+					Description("When to reboot if needed. Choose a low-traffic time.").
+					Value(&upgCfg.RebootTime),
+			),
+		)
 	}
 
 	if len(groups) > 0 {
