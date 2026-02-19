@@ -1,6 +1,12 @@
 VERSION ?= dev
 
-.PHONY: build release
+.PHONY: build release test test-docker
+
+test:
+	go test ./...
+
+test-docker:
+	./scripts/test-docker.sh
 
 build:
 	GOOS=linux GOARCH=amd64 go build -ldflags "-X github.com/phoqe/safeup/cmd.Version=$(VERSION)" -o safeup-linux-amd64 .

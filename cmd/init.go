@@ -98,6 +98,9 @@ func runInit(cmd *cobra.Command, args []string) error {
 		if err != nil {
 			return err
 		}
+		if err = system.AptUpdate(); err != nil {
+			return fmt.Errorf("apt update failed: %w", err)
+		}
 	}
 
 	var selectedFeatures []string
@@ -129,6 +132,8 @@ func runInit(cmd *cobra.Command, args []string) error {
 	userName := ""
 	passwordlessSudo := true
 	userPassword := ""
+	var otherUsers []string
+	removeOtherUsers := false
 	sshPort := sshCfg.Port
 	portsStr := strings.Join(ufwCfg.AllowedPorts, ", ")
 	maxRetryStr := strconv.Itoa(f2bCfg.MaxRetry)
@@ -511,7 +516,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 		total++
 	}
 	if contains(selectedFeatures, "user") {
-		total++
+		total += 2
 	}
 	var answered []answeredStep
 
@@ -523,6 +528,38 @@ func runInit(cmd *cobra.Command, args []string) error {
 			return err
 		}
 		answered = append(answered, answeredStep{section: s.section, label: s.label, val: s.value()})
+
+		if s.label == "Passwordless sudo" {
+			otherUsers, _ = modules.ListOtherUsers(strings.TrimSpace(userName))
+			if len(otherUsers) > 0 {
+				stepNum++
+				renderHeader(stepNum, total, answered)
+				var confirmRemove bool
+				userList := strings.Join(otherUsers, ", ")
+				if err := huh.NewForm(huh.NewGroup(
+					huh.NewNote().
+						Title("Other users found").
+						Description(
+							"The following users exist on this system: " + userList + "\n\n"+
+								"Removing unused users reduces attack surface. This will delete\n"+
+								"the users and their home directories. Ensure no one is logged in\n"+
+								"as these users before proceeding."),
+					huh.NewConfirm().
+						Title("Remove these users?").
+						Value(&confirmRemove).
+						Affirmative("Yes, remove them").
+						Negative("No, keep them"),
+				)).WithTheme(wizardTheme()).Run(); err != nil {
+					return err
+				}
+				removeOtherUsers = confirmRemove
+				answered = append(answered, answeredStep{
+					section: "Create User",
+					label:   "Remove other users",
+					val:     ternaryStr(removeOtherUsers, "yes", "no"),
+				})
+			}
+		}
 
 		if s.label == "Passwordless sudo" && !passwordlessSudo {
 			stepNum++
@@ -620,7 +657,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 		huh.NewGroup(
 			huh.NewNote().
 				Title("Review your configuration").
-				Description(buildSummary(selectedFeatures, &userCfg, &sshCfg, &ufwCfg, &f2bCfg, &upgCfg, &sysctlCfg, &apparmorCfg, &shmCfg, &auditdCfg, &timesyncCfg)),
+				Description(buildSummary(selectedFeatures, &userCfg, &sshCfg, &ufwCfg, &f2bCfg, &upgCfg, &sysctlCfg, &apparmorCfg, &shmCfg, &auditdCfg, &timesyncCfg, otherUsers, removeOtherUsers)),
 			huh.NewConfirm().
 				Title("Apply these changes?").
 				Value(&confirm).
@@ -653,6 +690,10 @@ func runInit(cmd *cobra.Command, args []string) error {
 	} else {
 		applyFn := func() {
 			if contains(selectedFeatures, "user") && userCfg.Username != "" {
+				if removeOtherUsers && len(otherUsers) > 0 {
+					err := modules.RemoveOtherUsers(otherUsers)
+					results = append(results, applyResult{"Remove other users", err})
+				}
 				m := &modules.UserModule{}
 				results = append(results, applyResult{m.Name(), m.Apply(&userCfg)})
 			}
@@ -776,7 +817,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-func buildSummary(features []string, user *system.UserConfig, ssh *system.SSHConfig, ufw *system.UFWConfig, f2b *system.Fail2BanConfig, upg *system.UpgradesConfig, _ *system.SysctlConfig, _ *system.AppArmorConfig, _ *system.ShmConfig, _ *system.AuditdConfig, _ *system.TimesyncConfig) string {
+func buildSummary(features []string, user *system.UserConfig, ssh *system.SSHConfig, ufw *system.UFWConfig, f2b *system.Fail2BanConfig, upg *system.UpgradesConfig, _ *system.SysctlConfig, _ *system.AppArmorConfig, _ *system.ShmConfig, _ *system.AuditdConfig, _ *system.TimesyncConfig, otherUsers []string, removeOtherUsers bool) string {
 	var lines []string
 
 	if contains(features, "user") && user.Username != "" {
@@ -786,6 +827,9 @@ func buildSummary(features []string, user *system.UserConfig, ssh *system.SSHCon
 		lines = append(lines, fmt.Sprintf("  Passwordless sudo: %s", ternaryStr(user.PasswordlessSudo, "yes", "no")))
 		if !user.PasswordlessSudo {
 			lines = append(lines, fmt.Sprintf("  Password for sudo: %s", ternaryStr(user.Password != "", "set", "set later with passwd")))
+		}
+		if len(otherUsers) > 0 {
+			lines = append(lines, fmt.Sprintf("  Remove other users (%s): %s", strings.Join(otherUsers, ", "), ternaryStr(removeOtherUsers, "yes", "no")))
 		}
 		lines = append(lines, "")
 	}

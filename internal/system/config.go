@@ -7,44 +7,45 @@ import (
 )
 
 const ConfigDir = "/etc/safeup"
-const ConfigPath = "/etc/safeup/config.json"
+
+var ConfigPath = "/etc/safeup/config.json"
 
 type SavedConfig struct {
-	User     *UserConfig     `json:"user,omitempty"`
-	SSH      *SSHConfig      `json:"ssh,omitempty"`
-	UFW      *UFWConfig      `json:"ufw,omitempty"`
-	Fail2Ban *Fail2BanConfig `json:"fail2ban,omitempty"`
-	Upgrades *UpgradesConfig `json:"upgrades,omitempty"`
-	Sysctl   *SysctlConfig   `json:"sysctl,omitempty"`
-	AppArmor *AppArmorConfig `json:"apparmor,omitempty"`
-	Shm      *ShmConfig      `json:"shm,omitempty"`
-	Auditd   *AuditdConfig   `json:"auditd,omitempty"`
-	Timesync *TimesyncConfig `json:"timesync,omitempty"`
+	User     *UserConfig     `json:"user,omitempty" yaml:"user,omitempty"`
+	SSH      *SSHConfig      `json:"ssh,omitempty" yaml:"ssh,omitempty"`
+	UFW      *UFWConfig      `json:"ufw,omitempty" yaml:"ufw,omitempty"`
+	Fail2Ban *Fail2BanConfig `json:"fail2ban,omitempty" yaml:"fail2ban,omitempty"`
+	Upgrades *UpgradesConfig `json:"upgrades,omitempty" yaml:"upgrades,omitempty"`
+	Sysctl   *SysctlConfig   `json:"sysctl,omitempty" yaml:"sysctl,omitempty"`
+	AppArmor *AppArmorConfig `json:"apparmor,omitempty" yaml:"apparmor,omitempty"`
+	Shm      *ShmConfig      `json:"shm,omitempty" yaml:"shm,omitempty"`
+	Auditd   *AuditdConfig   `json:"auditd,omitempty" yaml:"auditd,omitempty"`
+	Timesync *TimesyncConfig `json:"timesync,omitempty" yaml:"timesync,omitempty"`
 }
 
 type UserConfig struct {
-	Username         string `json:"username"`
-	AuthorizedKey    string `json:"authorized_key,omitempty"`
-	PasswordlessSudo bool   `json:"passwordless_sudo"`
-	Password         string `json:"-"`
+	Username         string `json:"username" yaml:"username"`
+	AuthorizedKey    string `json:"authorized_key,omitempty" yaml:"authorized_key,omitempty"`
+	PasswordlessSudo bool   `json:"passwordless_sudo" yaml:"passwordless_sudo"`
+	Password         string `json:"-" yaml:"-"`
 }
 
 type SSHConfig struct {
-	DisableRootLogin    bool   `json:"disable_root_login"`
-	DisablePasswordAuth bool   `json:"disable_password_auth"`
-	Port                string `json:"port"`
-	AuthorizedKey       string `json:"authorized_key,omitempty"`
-	AuthorizedKeyUser   string `json:"authorized_key_user,omitempty"`
+	DisableRootLogin    bool   `json:"disable_root_login" yaml:"disable_root_login"`
+	DisablePasswordAuth bool   `json:"disable_password_auth" yaml:"disable_password_auth"`
+	Port                string `json:"port" yaml:"port"`
+	AuthorizedKey       string `json:"authorized_key,omitempty" yaml:"authorized_key,omitempty"`
+	AuthorizedKeyUser   string `json:"authorized_key_user,omitempty" yaml:"authorized_key_user,omitempty"`
 }
 
 type UFWConfig struct {
-	AllowedPorts []string `json:"allowed_ports"`
-	RateLimitSSH bool     `json:"rate_limit_ssh"`
+	AllowedPorts []string `json:"allowed_ports" yaml:"allowed_ports"`
+	RateLimitSSH bool     `json:"rate_limit_ssh" yaml:"rate_limit_ssh"`
 }
 
 type Fail2BanConfig struct {
-	MaxRetry int `json:"max_retry"`
-	BanTime  int `json:"ban_time"`
+	MaxRetry int `json:"max_retry" yaml:"max_retry"`
+	BanTime  int `json:"ban_time" yaml:"ban_time"`
 }
 
 type UpgradesConfig struct{}

@@ -1,14 +1,63 @@
 package modules
 
 import (
+	"bufio"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/phoqe/safeup/internal/system"
 )
+
+func ListOtherUsers(excludeUsername string) ([]string, error) {
+	f, err := os.Open("/etc/passwd")
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	return listOtherUsersFromReader(f, excludeUsername)
+}
+
+func listOtherUsersFromReader(r io.Reader, excludeUsername string) ([]string, error) {
+	var users []string
+	scanner := bufio.NewScanner(r)
+	for scanner.Scan() {
+		line := scanner.Text()
+		if strings.HasPrefix(line, "#") {
+			continue
+		}
+		fields := strings.Split(line, ":")
+		if len(fields) < 3 {
+			continue
+		}
+		username := fields[0]
+		uid, err := strconv.Atoi(fields[2])
+		if err != nil {
+			continue
+		}
+		if uid >= 1000 && uid < 65534 && username != excludeUsername {
+			users = append(users, username)
+		}
+	}
+	return users, scanner.Err()
+}
+
+func RemoveOtherUsers(usernames []string) error {
+	for _, u := range usernames {
+		result, err := system.Run("userdel", "-r", u)
+		if err != nil {
+			return fmt.Errorf("userdel %s failed: %w", u, err)
+		}
+		if result.ExitCode != 0 && !strings.Contains(result.Stderr, "does not exist") {
+			return fmt.Errorf("userdel %s failed: %s", u, result.Stderr)
+		}
+	}
+	return nil
+}
 
 type UserModule struct{}
 
@@ -79,6 +128,8 @@ func (m *UserModule) Apply(cfg *system.UserConfig) error {
 
 	result, err := system.Run("id", "-u", username)
 	if err == nil && result.ExitCode == 0 {
+		cmd := exec.Command("usermod", "-aG", "sudo", username)
+		_ = cmd.Run()
 		if err := addAuthorizedKey(username, authorizedKey); err != nil {
 			return err
 		}
@@ -128,6 +179,10 @@ func configureSudo(cfg *system.UserConfig) error {
 	if !cfg.PasswordlessSudo {
 		os.Remove(sudoersPath)
 		return nil
+	}
+
+	if err := os.MkdirAll(filepath.Dir(sudoersPath), 0755); err != nil {
+		return fmt.Errorf("cannot create sudoers.d: %w", err)
 	}
 
 	content := cfg.Username + " ALL=(ALL) NOPASSWD:ALL\n"
