@@ -54,44 +54,34 @@ func runVerify(cmd *cobra.Command, args []string) error {
 	var results []*modules.VerifyResult
 
 	if cfg.User != nil {
-		m := &modules.UserModule{}
-		results = append(results, m.Verify(cfg.User))
+		results = append(results, (&modules.UserModule{}).Verify(cfg.User))
 	}
 	if cfg.SSH != nil {
-		m := &modules.SSHModule{}
-		results = append(results, m.Verify(cfg.SSH))
+		results = append(results, (&modules.SSHModule{}).Verify(cfg.SSH))
 	}
 	if cfg.UFW != nil {
-		m := &modules.UFWModule{}
-		results = append(results, m.Verify(cfg.UFW))
+		results = append(results, (&modules.UFWModule{}).Verify(cfg.UFW))
 	}
 	if cfg.Fail2Ban != nil {
-		m := &modules.Fail2BanModule{}
-		results = append(results, m.Verify(cfg.Fail2Ban))
+		results = append(results, (&modules.Fail2BanModule{}).Verify(cfg.Fail2Ban))
 	}
 	if cfg.Upgrades != nil {
-		m := &modules.UpgradesModule{}
-		results = append(results, m.Verify(cfg.Upgrades))
+		results = append(results, (&modules.UpgradesModule{}).Verify(cfg.Upgrades))
 	}
 	if cfg.Sysctl != nil {
-		m := &modules.SysctlModule{}
-		results = append(results, m.Verify(cfg.Sysctl))
+		results = append(results, (&modules.SysctlModule{}).Verify(cfg.Sysctl))
 	}
 	if cfg.AppArmor != nil {
-		m := &modules.AppArmorModule{}
-		results = append(results, m.Verify(cfg.AppArmor))
+		results = append(results, (&modules.AppArmorModule{}).Verify(cfg.AppArmor))
 	}
 	if cfg.Shm != nil {
-		m := &modules.ShmModule{}
-		results = append(results, m.Verify(cfg.Shm))
+		results = append(results, (&modules.ShmModule{}).Verify(cfg.Shm))
 	}
 	if cfg.Auditd != nil {
-		m := &modules.AuditdModule{}
-		results = append(results, m.Verify(cfg.Auditd))
+		results = append(results, (&modules.AuditdModule{}).Verify(cfg.Auditd))
 	}
 	if cfg.Timesync != nil {
-		m := &modules.TimesyncModule{}
-		results = append(results, m.Verify(cfg.Timesync))
+		results = append(results, (&modules.TimesyncModule{}).Verify(cfg.Timesync))
 	}
 
 	totalChecks := 0

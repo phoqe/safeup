@@ -8,7 +8,7 @@ IMAGE="ubuntu:22.04"
 cd "$PROJECT_ROOT"
 GOOS=linux GOARCH=amd64 go build -ldflags "-X github.com/phoqe/safeup/cmd.Version=test" -o safeup-linux-amd64 .
 
-echo "=== Unit-style tests ==="
+echo "=== Smoke tests ==="
 docker run --rm -v "$PROJECT_ROOT/safeup-linux-amd64:/usr/local/bin/safeup:ro" "$IMAGE" \
   bash -c '
     set -e

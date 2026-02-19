@@ -17,6 +17,7 @@ var rootCmd = &cobra.Command{
 }
 
 func init() {
+	rootCmd.CompletionOptions.DisableDefaultCmd = true
 	rootCmd.PersistentFlags().BoolVar(&DryRun, "dry-run", false, "skip OS/root checks and don't apply changes (for testing)")
 }
 

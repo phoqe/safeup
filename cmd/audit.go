@@ -62,6 +62,11 @@ func runAudit(cmd *cobra.Command, args []string) error {
 	checks = append(checks, auditUFW()...)
 	checks = append(checks, auditFail2Ban()...)
 	checks = append(checks, auditUpgrades()...)
+	checks = append(checks, auditSysctl()...)
+	checks = append(checks, auditAppArmor()...)
+	checks = append(checks, auditShm()...)
+	checks = append(checks, auditAuditd()...)
+	checks = append(checks, auditTimesync()...)
 	checks = append(checks, auditUsers()...)
 
 	totalPass := 0
@@ -164,6 +169,20 @@ func auditSSH() []auditCheck {
 		checks = append(checks, auditCheck{cat, "MaxAuthTries", auditWarn, "set to " + maxAuth + " (consider 3 or lower)"})
 	}
 
+	x11 := getSSHValue(content, "X11Forwarding")
+	if strings.EqualFold(x11, "no") {
+		checks = append(checks, auditCheck{cat, "X11Forwarding disabled", auditPass, ""})
+	} else if x11 != "" {
+		checks = append(checks, auditCheck{cat, "X11Forwarding", auditWarn, "set to " + x11 + " (consider no)"})
+	}
+
+	tcpFwd := getSSHValue(content, "AllowTcpForwarding")
+	if strings.EqualFold(tcpFwd, "no") {
+		checks = append(checks, auditCheck{cat, "AllowTcpForwarding disabled", auditPass, ""})
+	} else if tcpFwd != "" {
+		checks = append(checks, auditCheck{cat, "AllowTcpForwarding", auditWarn, "set to " + tcpFwd + " (consider no)"})
+	}
+
 	return checks
 }
 
@@ -249,6 +268,149 @@ func auditUpgrades() []auditCheck {
 		checks = append(checks, auditCheck{cat, "Automatic upgrades enabled", auditPass, ""})
 	} else {
 		checks = append(checks, auditCheck{cat, "Automatic upgrades", auditFail, "installed but not enabled"})
+	}
+
+	return checks
+}
+
+func auditSysctl() []auditCheck {
+	var checks []auditCheck
+	cat := "Kernel Hardening"
+
+	sysctlSettings := []struct{ key, value string }{
+		{"net.ipv4.conf.all.rp_filter", "1"},
+		{"net.ipv4.tcp_syncookies", "1"},
+		{"net.ipv4.conf.all.accept_source_route", "0"},
+		{"net.ipv4.conf.default.accept_source_route", "0"},
+		{"net.ipv4.icmp_echo_ignore_broadcasts", "1"},
+		{"kernel.randomize_va_space", "2"},
+	}
+
+	_, err := os.Stat("/etc/sysctl.d/99-safeup.conf")
+	if err != nil {
+		checks = append(checks, auditCheck{cat, "sysctl config", auditWarn, "99-safeup.conf not found"})
+		return checks
+	}
+
+	for _, s := range sysctlSettings {
+		result, err := system.Run("sysctl", "-n", s.key)
+		if err != nil || result.ExitCode != 0 {
+			checks = append(checks, auditCheck{cat, s.key, auditWarn, "cannot read"})
+			continue
+		}
+		actual := strings.TrimSpace(result.Stdout)
+		if actual == s.value {
+			checks = append(checks, auditCheck{cat, s.key + " = " + s.value, auditPass, ""})
+		} else {
+			checks = append(checks, auditCheck{cat, s.key, auditFail, "expected " + s.value + ", got " + actual})
+		}
+	}
+
+	return checks
+}
+
+func auditAppArmor() []auditCheck {
+	var checks []auditCheck
+	cat := "AppArmor"
+
+	if !system.IsInstalled("apparmor") {
+		checks = append(checks, auditCheck{cat, "AppArmor", auditWarn, "not installed"})
+		return checks
+	}
+
+	if system.IsServiceActive("apparmor") {
+		checks = append(checks, auditCheck{cat, "AppArmor active", auditPass, ""})
+	} else {
+		checks = append(checks, auditCheck{cat, "AppArmor", auditFail, "installed but not active"})
+	}
+
+	statusResult, err := system.Run("aa-status", "--enabled")
+	if err == nil && statusResult.ExitCode == 0 {
+		checks = append(checks, auditCheck{cat, "AppArmor enabled", auditPass, ""})
+	} else {
+		checks = append(checks, auditCheck{cat, "AppArmor enabled", auditWarn, "not enabled"})
+	}
+
+	return checks
+}
+
+func auditShm() []auditCheck {
+	var checks []auditCheck
+	cat := "/dev/shm"
+
+	data, err := os.ReadFile("/proc/mounts")
+	if err != nil {
+		checks = append(checks, auditCheck{cat, "mount options", auditWarn, "cannot read mounts"})
+		return checks
+	}
+
+	var hasNoexec, hasNosuid, hasNodev bool
+	for _, line := range strings.Split(string(data), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) < 4 {
+			continue
+		}
+		if fields[1] == "/dev/shm" || fields[1] == "/run/shm" {
+			for _, o := range strings.Split(fields[3], ",") {
+				switch o {
+				case "noexec":
+					hasNoexec = true
+				case "nosuid":
+					hasNosuid = true
+				case "nodev":
+					hasNodev = true
+				}
+			}
+			break
+		}
+	}
+
+	if hasNoexec && hasNosuid && hasNodev {
+		checks = append(checks, auditCheck{cat, "noexec,nosuid,nodev", auditPass, ""})
+	} else {
+		checks = append(checks, auditCheck{cat, "mount options", auditWarn,
+			fmt.Sprintf("missing hardening (noexec=%v nosuid=%v nodev=%v)", hasNoexec, hasNosuid, hasNodev)})
+	}
+
+	return checks
+}
+
+func auditAuditd() []auditCheck {
+	var checks []auditCheck
+	cat := "auditd"
+
+	if !system.IsInstalled("auditd") {
+		checks = append(checks, auditCheck{cat, "auditd", auditWarn, "not installed"})
+		return checks
+	}
+
+	if system.IsServiceActive("auditd") {
+		checks = append(checks, auditCheck{cat, "auditd active", auditPass, ""})
+	} else {
+		checks = append(checks, auditCheck{cat, "auditd", auditWarn, "installed but not active"})
+	}
+
+	if _, err := os.Stat("/etc/audit/rules.d/safeup.rules"); err == nil {
+		checks = append(checks, auditCheck{cat, "safeup rules", auditPass, ""})
+	} else {
+		checks = append(checks, auditCheck{cat, "safeup rules", auditWarn, "rules file not found"})
+	}
+
+	return checks
+}
+
+func auditTimesync() []auditCheck {
+	var checks []auditCheck
+	cat := "Time Sync"
+
+	active := system.IsServiceActive("systemd-timesyncd") ||
+		system.IsServiceActive("chrony") ||
+		system.IsServiceActive("ntp")
+
+	if active {
+		checks = append(checks, auditCheck{cat, "time sync active", auditPass, ""})
+	} else {
+		checks = append(checks, auditCheck{cat, "time sync", auditWarn, "no timesync service active"})
 	}
 
 	return checks

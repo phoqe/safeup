@@ -1,11 +1,8 @@
 VERSION ?= dev
 
-.PHONY: build release test test-docker
+.PHONY: build release test
 
 test:
-	go test ./...
-
-test-docker:
 	./scripts/test-docker.sh
 
 build:
