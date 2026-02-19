@@ -45,7 +45,7 @@ func (m *SSHModule) Apply(cfg *system.SSHConfig) error {
 		return fmt.Errorf("cannot write sshd_config: %w", err)
 	}
 
-	if cfg.AuthorizedKey != "" {
+	if cfg.AuthorizedKey != "" && cfg.AuthorizedKeyUser == "" {
 		if err := installAuthorizedKey(cfg.AuthorizedKey); err != nil {
 			return fmt.Errorf("failed to install SSH key: %w", err)
 		}

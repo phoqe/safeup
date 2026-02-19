@@ -53,6 +53,10 @@ func runVerify(cmd *cobra.Command, args []string) error {
 
 	var results []*modules.VerifyResult
 
+	if cfg.User != nil {
+		m := &modules.UserModule{}
+		results = append(results, m.Verify(cfg.User))
+	}
 	if cfg.SSH != nil {
 		m := &modules.SSHModule{}
 		results = append(results, m.Verify(cfg.SSH))

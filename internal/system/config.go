@@ -10,10 +10,16 @@ const ConfigDir = "/etc/safeup"
 const ConfigPath = "/etc/safeup/config.json"
 
 type SavedConfig struct {
+	User     *UserConfig     `json:"user,omitempty"`
 	SSH      *SSHConfig      `json:"ssh,omitempty"`
 	UFW      *UFWConfig      `json:"ufw,omitempty"`
 	Fail2Ban *Fail2BanConfig `json:"fail2ban,omitempty"`
 	Upgrades *UpgradesConfig `json:"upgrades,omitempty"`
+}
+
+type UserConfig struct {
+	Username      string `json:"username"`
+	AuthorizedKey string `json:"authorized_key,omitempty"`
 }
 
 type SSHConfig struct {
@@ -21,6 +27,7 @@ type SSHConfig struct {
 	DisablePasswordAuth bool   `json:"disable_password_auth"`
 	Port                string `json:"port"`
 	AuthorizedKey       string `json:"authorized_key,omitempty"`
+	AuthorizedKeyUser   string `json:"authorized_key_user,omitempty"`
 }
 
 type UFWConfig struct {
@@ -33,10 +40,7 @@ type Fail2BanConfig struct {
 	BanTime  int `json:"ban_time"`
 }
 
-type UpgradesConfig struct {
-	AutoReboot bool   `json:"auto_reboot"`
-	RebootTime string `json:"reboot_time"`
-}
+type UpgradesConfig struct{}
 
 func LoadConfig() (*SavedConfig, error) {
 	data, err := os.ReadFile(ConfigPath)

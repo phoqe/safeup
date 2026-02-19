@@ -26,7 +26,6 @@ func init() {
 }
 
 var (
-	logoStyle     = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("212"))
 	dimStyle      = lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
 	checkStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("10"))
 	valueStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("15"))
@@ -44,11 +43,8 @@ func wizardTheme() *huh.Theme {
 	return t
 }
 
-func renderHeader(osLabel string, current, total int, answered []answeredStep) {
+func renderHeader(current, total int, answered []answeredStep) {
 	fmt.Print("\033[H\033[2J")
-	fmt.Println(logoStyle.Render("  SafeUp"))
-	fmt.Println(dimStyle.Render("  " + osLabel))
-	fmt.Println()
 
 	if total > 0 {
 		fmt.Printf("  %s\n", stepStyle.Render(fmt.Sprintf("Step %d of %d", current, total)))
@@ -97,9 +93,8 @@ func runInit(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	osInfo := &system.OSInfo{PrettyName: "dry-run mode"}
 	if !DryRun {
-		osInfo, err = system.DetectOS()
+		_, err = system.DetectOS()
 		if err != nil {
 			return err
 		}
@@ -123,11 +118,10 @@ func runInit(cmd *cobra.Command, args []string) error {
 		BanTime:  86400,
 	}
 
-	upgCfg := system.UpgradesConfig{
-		AutoReboot: false,
-		RebootTime: "02:00",
-	}
+	upgCfg := system.UpgradesConfig{}
 
+	userCfg := system.UserConfig{}
+	userName := ""
 	sshPort := sshCfg.Port
 	portsStr := strings.Join(ufwCfg.AllowedPorts, ", ")
 	maxRetryStr := strconv.Itoa(f2bCfg.MaxRetry)
@@ -135,7 +129,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 	addSSHKey := true
 	sshKey := ""
 
-	renderHeader(osInfo.PrettyName, 0, 0, nil)
+	renderHeader(0, 0, nil)
 
 	err = huh.NewForm(
 		huh.NewGroup(
@@ -153,6 +147,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 				Title("Select hardening features").
 				Description("All are recommended. Deselect any you want to skip.").
 				Options(
+					huh.NewOption("Create User", "user").Selected(true),
 					huh.NewOption("SSH Hardening", "ssh").Selected(true),
 					huh.NewOption("UFW Firewall", "ufw").Selected(true),
 					huh.NewOption("fail2ban", "fail2ban").Selected(true),
@@ -178,6 +173,61 @@ func runInit(cmd *cobra.Command, args []string) error {
 	}
 
 	var steps []wizardStep
+
+	if contains(selectedFeatures, "user") {
+		steps = append(steps,
+			wizardStep{
+				section: "Create User",
+				label:   "Username",
+				field: huh.NewInput().
+					Title("Username for new user").
+					Description(
+						"Create a non-root user with sudo access. You will use this user\n"+
+							"instead of root for SSH. Required when disabling root login.\n\n"+
+							"Use lowercase letters, numbers, hyphens only.").
+					Value(&userName).
+					Validate(func(s string) error {
+						s = strings.TrimSpace(s)
+						if s == "" {
+							return fmt.Errorf("username cannot be empty")
+						}
+						if s == "root" {
+							return fmt.Errorf("cannot create user named root")
+						}
+						for _, c := range s {
+							if (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-' || c == '_' {
+								continue
+							}
+							return fmt.Errorf("use only lowercase letters, numbers, hyphens, underscores")
+						}
+						return nil
+					}),
+				value: func() string { return userName },
+			},
+			wizardStep{
+				section: "Create User",
+				label:   "SSH public key",
+				field: huh.NewText().
+					Title("Paste your SSH public key").
+					Description(
+						"Paste the contents of your public key (e.g. ~/.ssh/id_ed25519.pub).\n"+
+							"It starts with 'ssh-ed25519', 'ssh-rsa', or similar.\n\n"+
+							"This will be added to the new user's authorized_keys.").
+					Value(&sshKey).
+					Validate(func(s string) error {
+						s = strings.TrimSpace(s)
+						if s == "" {
+							return fmt.Errorf("key cannot be empty")
+						}
+						if !strings.HasPrefix(s, "ssh-") && !strings.HasPrefix(s, "ecdsa-") {
+							return fmt.Errorf("doesn't look like a public key (should start with ssh- or ecdsa-)")
+						}
+						return nil
+					}),
+				value: func() string { return sshKey[:min(30, len(sshKey))] + "…" },
+			},
+		)
+	}
 
 	if contains(selectedFeatures, "ssh") {
 		steps = append(steps,
@@ -227,20 +277,23 @@ func runInit(cmd *cobra.Command, args []string) error {
 					}),
 				value: func() string { return sshPort },
 			},
-			wizardStep{
-				section: "SSH Hardening",
-				label:   "Add SSH public key",
-				field: huh.NewConfirm().
-					Title("Add an authorized SSH public key?").
-					Description(
-						"Adds your public key to /root/.ssh/authorized_keys so you can\n"+
-							"log in without a password. Strongly recommended if you are\n"+
-							"disabling password authentication.\n\n"+
-							"Default: Yes").
-					Value(&addSSHKey),
-				value: func() string { return ternaryStr(addSSHKey, "yes", "no") },
-			},
 		)
+		if !contains(selectedFeatures, "user") {
+			steps = append(steps,
+				wizardStep{
+					section: "SSH Hardening",
+					label:   "Add SSH public key",
+					field: huh.NewConfirm().
+						Title("Add an authorized SSH public key to root?").
+						Description(
+							"Adds your public key to /root/.ssh/authorized_keys. Use this only\n"+
+								"if you did not create a new user. Recommended: create a user instead.\n\n"+
+								"Default: Yes").
+						Value(&addSSHKey),
+					value: func() string { return ternaryStr(addSSHKey, "yes", "no") },
+				},
+			)
+		}
 	}
 
 	if contains(selectedFeatures, "ufw") {
@@ -329,34 +382,22 @@ func runInit(cmd *cobra.Command, args []string) error {
 		steps = append(steps,
 			wizardStep{
 				section: "Unattended Upgrades",
-				label:   "Auto-reboot",
-				field: huh.NewConfirm().
-					Title("Enable automatic reboot when required?").
+				label:   "Enable",
+				field: huh.NewNote().
+					Title("Unattended Upgrades").
 					Description(
-						"Some security updates (especially kernel patches) only take\n"+
-							"effect after a reboot. This allows the system to reboot at a\n"+
-							"scheduled time instead of running with unpatched vulnerabilities.\n\n"+
-							"Default: No (you may prefer to reboot manually)").
-					Value(&upgCfg.AutoReboot),
-				value: func() string { return ternaryStr(upgCfg.AutoReboot, "yes", "no") },
-			},
-			wizardStep{
-				section: "Unattended Upgrades",
-				label:   "Reboot time",
-				field: huh.NewInput().
-					Title("Reboot time (HH:MM)").
-					Description(
-						"If auto-reboot is enabled, the system reboots at this time when\n"+
-							"a reboot is needed. Pick a low-traffic window.\n\n"+
-							"Default: 02:00 (2 AM server time)").
-					Value(&upgCfg.RebootTime),
-				value: func() string { return upgCfg.RebootTime },
+						"Automatic security updates will be enabled.\n\n"+
+							"The system will install security patches automatically.\n"+
+							"Reboots are not automatic — you can reboot manually when needed.").
+					Next(true).
+					NextLabel("Next"),
+				value: func() string { return "enabled" },
 			},
 		)
 	}
 
 	total := len(steps)
-	if contains(selectedFeatures, "ssh") {
+	if contains(selectedFeatures, "ssh") && !contains(selectedFeatures, "user") {
 		total++
 	}
 	var answered []answeredStep
@@ -364,7 +405,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 	stepNum := 0
 	for _, s := range steps {
 		stepNum++
-		renderHeader(osInfo.PrettyName, stepNum, total, answered)
+		renderHeader(stepNum, total, answered)
 		if err := runForm(s.field); err != nil {
 			return err
 		}
@@ -372,7 +413,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 
 		if s.label == "Add SSH public key" && addSSHKey {
 			stepNum++
-			renderHeader(osInfo.PrettyName, stepNum, total, answered)
+			renderHeader(stepNum, total, answered)
 			if err := huh.NewForm(huh.NewGroup(
 				huh.NewText().
 					Title("Paste your SSH public key").
@@ -403,7 +444,14 @@ func runInit(cmd *cobra.Command, args []string) error {
 	}
 
 	sshCfg.Port = sshPort
-	sshCfg.AuthorizedKey = strings.TrimSpace(sshKey)
+
+	if contains(selectedFeatures, "user") {
+		userCfg.Username = strings.TrimSpace(userName)
+		userCfg.AuthorizedKey = strings.TrimSpace(sshKey)
+		sshCfg.AuthorizedKeyUser = userCfg.Username
+	} else {
+		sshCfg.AuthorizedKey = strings.TrimSpace(sshKey)
+	}
 
 	parsedPorts := make([]string, 0)
 	for _, p := range strings.Split(portsStr, ",") {
@@ -430,14 +478,14 @@ func runInit(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	renderHeader(osInfo.PrettyName, 0, 0, answered)
+	renderHeader(0, 0, answered)
 
 	var confirm bool
 	err = huh.NewForm(
 		huh.NewGroup(
 			huh.NewNote().
 				Title("Review your configuration").
-				Description(buildSummary(selectedFeatures, &sshCfg, &ufwCfg, &f2bCfg, &upgCfg)),
+				Description(buildSummary(selectedFeatures, &userCfg, &sshCfg, &ufwCfg, &f2bCfg, &upgCfg)),
 			huh.NewConfirm().
 				Title("Apply these changes?").
 				Value(&confirm).
@@ -469,6 +517,10 @@ func runInit(cmd *cobra.Command, args []string) error {
 		}
 	} else {
 		applyFn := func() {
+			if contains(selectedFeatures, "user") && userCfg.Username != "" {
+				m := &modules.UserModule{}
+				results = append(results, applyResult{m.Name(), m.Apply(userCfg.Username, userCfg.AuthorizedKey)})
+			}
 			if contains(selectedFeatures, "ssh") {
 				m := &modules.SSHModule{}
 				results = append(results, applyResult{m.Name(), m.Apply(&sshCfg)})
@@ -493,6 +545,9 @@ func runInit(cmd *cobra.Command, args []string) error {
 			Run()
 
 		savedCfg := &system.SavedConfig{}
+		if contains(selectedFeatures, "user") && userCfg.Username != "" {
+			savedCfg.User = &userCfg
+		}
 		if contains(selectedFeatures, "ssh") {
 			savedCfg.SSH = &sshCfg
 		}
@@ -532,8 +587,14 @@ func runInit(cmd *cobra.Command, args []string) error {
 	if contains(selectedFeatures, "ssh") {
 		fmt.Println()
 		fmt.Println(warnStyle.Render("  ⚠  Test SSH access in a new terminal before closing this session!"))
+		loginUser := "root"
+		if contains(selectedFeatures, "user") && userCfg.Username != "" {
+			loginUser = userCfg.Username
+		}
 		if sshCfg.Port != "22" {
-			fmt.Printf(dimStyle.Render("     ssh -p %s user@host\n"), sshCfg.Port)
+			fmt.Printf(dimStyle.Render("     ssh -p %s %s@host\n"), sshCfg.Port, loginUser)
+		} else {
+			fmt.Printf(dimStyle.Render("     ssh %s@host\n"), loginUser)
 		}
 	}
 
@@ -545,14 +606,24 @@ func runInit(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-func buildSummary(features []string, ssh *system.SSHConfig, ufw *system.UFWConfig, f2b *system.Fail2BanConfig, upg *system.UpgradesConfig) string {
+func buildSummary(features []string, user *system.UserConfig, ssh *system.SSHConfig, ufw *system.UFWConfig, f2b *system.Fail2BanConfig, upg *system.UpgradesConfig) string {
 	var lines []string
+
+	if contains(features, "user") && user.Username != "" {
+		lines = append(lines, "Create User")
+		lines = append(lines, fmt.Sprintf("  Username:       %s", user.Username))
+		lines = append(lines, fmt.Sprintf("  SSH key:        %s", ternaryStr(user.AuthorizedKey != "", "yes", "no")))
+		lines = append(lines, "")
+	}
 
 	if contains(features, "ssh") {
 		lines = append(lines, "SSH Hardening")
 		lines = append(lines, fmt.Sprintf("  Root login:     %s", ternaryStr(ssh.DisableRootLogin, "disabled", "allowed")))
 		lines = append(lines, fmt.Sprintf("  Password auth:  %s", ternaryStr(ssh.DisablePasswordAuth, "disabled", "allowed")))
 		lines = append(lines, fmt.Sprintf("  Port:           %s", ssh.Port))
+		if !contains(features, "user") {
+			lines = append(lines, fmt.Sprintf("  SSH key (root): %s", ternaryStr(ssh.AuthorizedKey != "", "yes", "no")))
+		}
 		lines = append(lines, "")
 	}
 
@@ -573,10 +644,7 @@ func buildSummary(features []string, ssh *system.SSHConfig, ufw *system.UFWConfi
 
 	if contains(features, "upgrades") {
 		lines = append(lines, "Unattended Upgrades")
-		lines = append(lines, fmt.Sprintf("  Auto-reboot:    %s", ternaryStr(upg.AutoReboot, "yes", "no")))
-		if upg.AutoReboot {
-			lines = append(lines, fmt.Sprintf("  Reboot time:    %s", upg.RebootTime))
-		}
+		lines = append(lines, "  Automatic security updates: enabled")
 	}
 
 	return strings.Join(lines, "\n")
