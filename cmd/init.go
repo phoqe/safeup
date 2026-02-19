@@ -119,6 +119,8 @@ func runInit(cmd *cobra.Command, args []string) error {
 	}
 
 	upgCfg := system.UpgradesConfig{}
+	sysctlCfg := system.SysctlConfig{}
+	apparmorCfg := system.AppArmorConfig{}
 
 	userCfg := system.UserConfig{}
 	userName := ""
@@ -151,6 +153,8 @@ func runInit(cmd *cobra.Command, args []string) error {
 					huh.NewOption("SSH Hardening", "ssh").Selected(true),
 					huh.NewOption("UFW Firewall", "ufw").Selected(true),
 					huh.NewOption("fail2ban", "fail2ban").Selected(true),
+					huh.NewOption("Kernel Hardening", "sysctl").Selected(true),
+					huh.NewOption("AppArmor", "apparmor").Selected(true),
 					huh.NewOption("Unattended Upgrades", "upgrades").Selected(true),
 				).
 				Value(&selectedFeatures),
@@ -378,6 +382,40 @@ func runInit(cmd *cobra.Command, args []string) error {
 		)
 	}
 
+	if contains(selectedFeatures, "sysctl") {
+		steps = append(steps,
+			wizardStep{
+				section: "Kernel Hardening",
+				label:   "Enable",
+				field: huh.NewNote().
+					Title("Kernel Hardening").
+					Description(
+						"Apply sysctl security settings: reverse path filtering,\n"+
+							"SYN cookies, disable source routing, ASLR.").
+					Next(true).
+					NextLabel("Next"),
+				value: func() string { return "enabled" },
+			},
+		)
+	}
+
+	if contains(selectedFeatures, "apparmor") {
+		steps = append(steps,
+			wizardStep{
+				section: "AppArmor",
+				label:   "Enable",
+				field: huh.NewNote().
+					Title("AppArmor").
+					Description(
+						"Ensure AppArmor is enabled and in enforcing mode.\n"+
+							"AppArmor provides mandatory access control for applications.").
+					Next(true).
+					NextLabel("Next"),
+				value: func() string { return "enabled" },
+			},
+		)
+	}
+
 	if contains(selectedFeatures, "upgrades") {
 		steps = append(steps,
 			wizardStep{
@@ -485,7 +523,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 		huh.NewGroup(
 			huh.NewNote().
 				Title("Review your configuration").
-				Description(buildSummary(selectedFeatures, &userCfg, &sshCfg, &ufwCfg, &f2bCfg, &upgCfg)),
+				Description(buildSummary(selectedFeatures, &userCfg, &sshCfg, &ufwCfg, &f2bCfg, &upgCfg, &sysctlCfg, &apparmorCfg)),
 			huh.NewConfirm().
 				Title("Apply these changes?").
 				Value(&confirm).
@@ -533,6 +571,14 @@ func runInit(cmd *cobra.Command, args []string) error {
 				m := &modules.Fail2BanModule{}
 				results = append(results, applyResult{m.Name(), m.Apply(&f2bCfg)})
 			}
+			if contains(selectedFeatures, "sysctl") {
+				m := &modules.SysctlModule{}
+				results = append(results, applyResult{m.Name(), m.Apply(&sysctlCfg)})
+			}
+			if contains(selectedFeatures, "apparmor") {
+				m := &modules.AppArmorModule{}
+				results = append(results, applyResult{m.Name(), m.Apply(&apparmorCfg)})
+			}
 			if contains(selectedFeatures, "upgrades") {
 				m := &modules.UpgradesModule{}
 				results = append(results, applyResult{m.Name(), m.Apply(&upgCfg)})
@@ -556,6 +602,12 @@ func runInit(cmd *cobra.Command, args []string) error {
 		}
 		if contains(selectedFeatures, "fail2ban") {
 			savedCfg.Fail2Ban = &f2bCfg
+		}
+		if contains(selectedFeatures, "sysctl") {
+			savedCfg.Sysctl = &sysctlCfg
+		}
+		if contains(selectedFeatures, "apparmor") {
+			savedCfg.AppArmor = &apparmorCfg
 		}
 		if contains(selectedFeatures, "upgrades") {
 			savedCfg.Upgrades = &upgCfg
@@ -606,7 +658,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-func buildSummary(features []string, user *system.UserConfig, ssh *system.SSHConfig, ufw *system.UFWConfig, f2b *system.Fail2BanConfig, upg *system.UpgradesConfig) string {
+func buildSummary(features []string, user *system.UserConfig, ssh *system.SSHConfig, ufw *system.UFWConfig, f2b *system.Fail2BanConfig, upg *system.UpgradesConfig, _ *system.SysctlConfig, _ *system.AppArmorConfig) string {
 	var lines []string
 
 	if contains(features, "user") && user.Username != "" {
@@ -639,6 +691,18 @@ func buildSummary(features []string, user *system.UserConfig, ssh *system.SSHCon
 		lines = append(lines, "fail2ban")
 		lines = append(lines, fmt.Sprintf("  Max retries:    %d", f2b.MaxRetry))
 		lines = append(lines, fmt.Sprintf("  Ban time:       %ds", f2b.BanTime))
+		lines = append(lines, "")
+	}
+
+	if contains(features, "sysctl") {
+		lines = append(lines, "Kernel Hardening")
+		lines = append(lines, "  sysctl security settings: enabled")
+		lines = append(lines, "")
+	}
+
+	if contains(features, "apparmor") {
+		lines = append(lines, "AppArmor")
+		lines = append(lines, "  Enforce mode: enabled")
 		lines = append(lines, "")
 	}
 

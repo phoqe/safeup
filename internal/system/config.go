@@ -15,6 +15,8 @@ type SavedConfig struct {
 	UFW      *UFWConfig      `json:"ufw,omitempty"`
 	Fail2Ban *Fail2BanConfig `json:"fail2ban,omitempty"`
 	Upgrades *UpgradesConfig `json:"upgrades,omitempty"`
+	Sysctl   *SysctlConfig   `json:"sysctl,omitempty"`
+	AppArmor *AppArmorConfig `json:"apparmor,omitempty"`
 }
 
 type UserConfig struct {
@@ -41,6 +43,10 @@ type Fail2BanConfig struct {
 }
 
 type UpgradesConfig struct{}
+
+type SysctlConfig struct{}
+
+type AppArmorConfig struct{}
 
 func LoadConfig() (*SavedConfig, error) {
 	data, err := os.ReadFile(ConfigPath)

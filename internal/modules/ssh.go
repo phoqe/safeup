@@ -40,6 +40,11 @@ func (m *SSHModule) Apply(cfg *system.SSHConfig) error {
 
 	content = setSshdOption(content, "MaxAuthTries", "3")
 	content = setSshdOption(content, "LoginGraceTime", "60")
+	content = setSshdOption(content, "X11Forwarding", "no")
+	content = setSshdOption(content, "AllowTcpForwarding", "no")
+	if cfg.AuthorizedKeyUser != "" {
+		content = setSshdOption(content, "AllowUsers", cfg.AuthorizedKeyUser)
+	}
 
 	if err := os.WriteFile(sshdConfigPath, []byte(content), 0644); err != nil {
 		return fmt.Errorf("cannot write sshd_config: %w", err)
@@ -145,6 +150,40 @@ func (m *SSHModule) Verify(cfg *system.SSHConfig) *VerifyResult {
 		Expected: "3",
 		Actual:   maxAuth,
 	})
+
+	x11 := getSshdOption(content, "X11Forwarding")
+	result.Checks = append(result.Checks, Check{
+		Name:     "X11Forwarding",
+		Status:   boolCheck(strings.EqualFold(x11, "no")),
+		Expected: "no",
+		Actual:   x11,
+	})
+
+	tcpFwd := getSshdOption(content, "AllowTcpForwarding")
+	result.Checks = append(result.Checks, Check{
+		Name:     "AllowTcpForwarding",
+		Status:   boolCheck(strings.EqualFold(tcpFwd, "no")),
+		Expected: "no",
+		Actual:   tcpFwd,
+	})
+
+	if cfg.AuthorizedKeyUser != "" {
+		allowUsers := getSshdOption(content, "AllowUsers")
+		users := strings.Fields(allowUsers)
+		found := false
+		for _, u := range users {
+			if u == cfg.AuthorizedKeyUser {
+				found = true
+				break
+			}
+		}
+		result.Checks = append(result.Checks, Check{
+			Name:     "AllowUsers",
+			Status:   boolCheck(found),
+			Expected: cfg.AuthorizedKeyUser,
+			Actual:   allowUsers,
+		})
+	}
 
 	return result
 }

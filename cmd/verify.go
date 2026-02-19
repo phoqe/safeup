@@ -73,6 +73,14 @@ func runVerify(cmd *cobra.Command, args []string) error {
 		m := &modules.UpgradesModule{}
 		results = append(results, m.Verify(cfg.Upgrades))
 	}
+	if cfg.Sysctl != nil {
+		m := &modules.SysctlModule{}
+		results = append(results, m.Verify(cfg.Sysctl))
+	}
+	if cfg.AppArmor != nil {
+		m := &modules.AppArmorModule{}
+		results = append(results, m.Verify(cfg.AppArmor))
+	}
 
 	totalChecks := 0
 	passedChecks := 0
