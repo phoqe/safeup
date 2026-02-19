@@ -45,6 +45,7 @@ func (m *UpgradesModule) Plan(cfg *system.UpgradesConfig) []string {
 	cmds = append(cmds, "apt-get install -y unattended-upgrades")
 	cmds = append(cmds, "write /etc/apt/apt.conf.d/20auto-upgrades")
 	cmds = append(cmds, "write /etc/apt/apt.conf.d/99-safeup-unattended-reboot (Automatic-Reboot at 04:00)")
+	cmds = append(cmds, "apt-get upgrade -y")
 	return cmds
 }
 

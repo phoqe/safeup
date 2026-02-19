@@ -48,14 +48,20 @@ func IsInstalled(pkg string) bool {
 	return result.ExitCode == 0
 }
 
+var aptUpdated bool
+
 func AptUpdate() error {
-	result, err := Run("apt-get", "update")
+	if aptUpdated {
+		return nil
+	}
+	result, err := Run("apt-get", "update", "-qq")
 	if err != nil {
 		return err
 	}
 	if result.ExitCode != 0 {
 		return fmt.Errorf("apt-get update failed: %s", result.Stderr)
 	}
+	aptUpdated = true
 	return nil
 }
 
@@ -70,6 +76,20 @@ func AptInstall(packages ...string) error {
 	}
 	if result.ExitCode != 0 {
 		return fmt.Errorf("apt-get install failed: %s", result.Stderr)
+	}
+	return nil
+}
+
+func AptUpgrade() error {
+	if err := AptUpdate(); err != nil {
+		return err
+	}
+	result, err := Run("apt-get", "upgrade", "-y")
+	if err != nil {
+		return err
+	}
+	if result.ExitCode != 0 {
+		return fmt.Errorf("apt-get upgrade failed: %s", result.Stderr)
 	}
 	return nil
 }

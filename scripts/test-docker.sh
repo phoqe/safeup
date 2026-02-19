@@ -61,8 +61,7 @@ docker run --rm \
     grep -q e2euser /etc/passwd
     test -f /home/e2euser/.ssh/authorized_keys
     grep -q "e2e-test-key" /home/e2euser/.ssh/authorized_keys
-    test -f /etc/sudoers.d/safeup-e2euser
-    grep -q NOPASSWD /etc/sudoers.d/safeup-e2euser
+    test ! -f /etc/sudoers.d/safeup-e2euser
 
     echo "  user created with sudo and SSH key OK"
   '

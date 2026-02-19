@@ -21,7 +21,7 @@ Requires root and Linux (amd64 or arm64). The installer downloads the binary and
 
 ## Features
 
-- **Create User** — Non-root user with sudo and SSH key (passwordless or password-protected)
+- **Create User** — Non-root user with sudo (password required) and SSH key
 - **SSH Hardening** — Disable root login, password auth, custom port, X11/TCP forwarding off, AllowUsers
 - **UFW Firewall** — Deny incoming by default, allow specified ports, rate-limit SSH
 - **fail2ban** — Brute-force protection for SSH
@@ -40,7 +40,6 @@ Requires root and Linux (amd64 or arm64). The installer downloads the binary and
 user:
   username: deploy
   authorized_key: "ssh-ed25519 AAAAC3..."
-  passwordless_sudo: true
 
 ssh:
   disable_root_login: true

@@ -317,15 +317,15 @@ func auditFail2Ban() []auditCheck {
 		content := string(data)
 		backend := extractAuditJailValue(content, "backend")
 		if backend == "systemd" {
-			journalMatch := extractAuditJailValue(content, "journalmatch")
-			if strings.Contains(journalMatch, "ssh.service") {
-				checks = append(checks, auditCheck{cat, "journalmatch targets ssh.service", auditPass, ""})
-			} else if journalMatch == "" {
-				checks = append(checks, auditCheck{cat, "journalmatch", auditFail,
-					"not set — default uses sshd.service which does not exist on Ubuntu"})
-			} else if strings.Contains(journalMatch, "sshd.service") {
-				checks = append(checks, auditCheck{cat, "journalmatch", auditFail,
-					"targets sshd.service — Ubuntu uses ssh.service, fail2ban will see zero failures"})
+			checks = append(checks, auditCheck{cat, "backend", auditFail,
+				"set to systemd — sshd child processes don't match journal filters on Ubuntu, use backend = auto with logpath"})
+		} else {
+			logpath := extractAuditJailValue(content, "logpath")
+			if logpath != "" {
+				checks = append(checks, auditCheck{cat, "logpath " + logpath, auditPass, ""})
+			} else if backend == "" || backend == "auto" {
+				checks = append(checks, auditCheck{cat, "logpath", auditWarn,
+					"not explicitly set — ensure /var/log/auth.log is being used"})
 			}
 		}
 	}

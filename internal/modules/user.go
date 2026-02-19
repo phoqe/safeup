@@ -79,10 +79,7 @@ func (m *UserModule) Plan(cfg *system.UserConfig) []string {
 	if cfg.Password != "" {
 		cmds = append(cmds, "chpasswd (set password for "+cfg.Username+")")
 	}
-	if cfg.PasswordlessSudo {
-		cmds = append(cmds, "write /etc/sudoers.d/safeup-"+cfg.Username+" '"+cfg.Username+" ALL=(ALL) NOPASSWD:ALL'")
-		cmds = append(cmds, "visudo -c -f /etc/sudoers.d/safeup-"+cfg.Username)
-	}
+	cmds = append(cmds, "rm -f /etc/sudoers.d/safeup-"+cfg.Username+" (enforce sudo password)")
 	return cmds
 }
 
@@ -125,17 +122,15 @@ func (m *UserModule) Verify(cfg *system.UserConfig) *VerifyResult {
 		})
 	}
 
-	if cfg.PasswordlessSudo {
-		sudoersPath := "/etc/sudoers.d/safeup-" + cfg.Username
-		data, err := os.ReadFile(sudoersPath)
-		hasNopasswd := err == nil && strings.Contains(string(data), "NOPASSWD")
-		result.Checks = append(result.Checks, Check{
-			Name:     "passwordless sudo",
-			Status:   boolCheck(hasNopasswd),
-			Expected: "configured",
-			Actual:   ternary(hasNopasswd, "configured", "missing"),
-		})
-	}
+	sudoersPath := "/etc/sudoers.d/safeup-" + cfg.Username
+	data, err := os.ReadFile(sudoersPath)
+	hasNopasswd := err == nil && strings.Contains(string(data), "NOPASSWD")
+	result.Checks = append(result.Checks, Check{
+		Name:     "sudo requires password",
+		Status:   boolCheck(!hasNopasswd),
+		Expected: "no NOPASSWD",
+		Actual:   ternary(hasNopasswd, "NOPASSWD found in "+sudoersPath, "password required"),
+	})
 
 	return result
 }
@@ -198,31 +193,7 @@ func setPassword(username, password string) error {
 
 func configureSudo(cfg *system.UserConfig) error {
 	sudoersPath := "/etc/sudoers.d/safeup-" + cfg.Username
-	if !cfg.PasswordlessSudo {
-		os.Remove(sudoersPath)
-		return nil
-	}
-
-	if err := os.MkdirAll(filepath.Dir(sudoersPath), 0755); err != nil {
-		return fmt.Errorf("cannot create sudoers.d: %w", err)
-	}
-
-	content := cfg.Username + " ALL=(ALL) NOPASSWD:ALL\n"
-
-	if err := os.WriteFile(sudoersPath, []byte(content), 0440); err != nil {
-		return fmt.Errorf("cannot write sudoers: %w", err)
-	}
-
-	result, err := system.Run("visudo", "-c", "-f", sudoersPath)
-	if err != nil {
-		os.Remove(sudoersPath)
-		return fmt.Errorf("visudo check failed: %w", err)
-	}
-	if result.ExitCode != 0 {
-		os.Remove(sudoersPath)
-		return fmt.Errorf("invalid sudoers: %s", result.Stderr)
-	}
-
+	os.Remove(sudoersPath)
 	return nil
 }
 

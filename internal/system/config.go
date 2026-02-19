@@ -24,10 +24,9 @@ type SavedConfig struct {
 }
 
 type UserConfig struct {
-	Username         string `json:"username" yaml:"username"`
-	AuthorizedKey    string `json:"authorized_key,omitempty" yaml:"authorized_key,omitempty"`
-	PasswordlessSudo bool   `json:"passwordless_sudo" yaml:"passwordless_sudo"`
-	Password         string `json:"-" yaml:"-"`
+	Username      string `json:"username" yaml:"username"`
+	AuthorizedKey string `json:"authorized_key,omitempty" yaml:"authorized_key,omitempty"`
+	Password      string `json:"-" yaml:"-"`
 }
 
 type SSHConfig struct {

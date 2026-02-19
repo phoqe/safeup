@@ -137,7 +137,6 @@ func runInit(cmd *cobra.Command, args []string) error {
 
 	userCfg := system.UserConfig{}
 	userName := ""
-	passwordlessSudo := true
 	userPassword := ""
 	var otherUsers []string
 	removeOtherUsers := false
@@ -232,7 +231,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 					if u == "" {
 						u = "<username>"
 					}
-					cmds := (&modules.UserModule{}).Plan(&system.UserConfig{Username: u, AuthorizedKey: sshKey, PasswordlessSudo: passwordlessSudo})
+					cmds := (&modules.UserModule{}).Plan(&system.UserConfig{Username: u, AuthorizedKey: sshKey})
 					return huh.NewInput().
 						Title("Username for new user").
 						Description(
@@ -264,7 +263,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 				section: "Create User",
 				label:   "SSH public key",
 				fieldFn: func() huh.Field {
-					cmds := (&modules.UserModule{}).Plan(&system.UserConfig{Username: userName, AuthorizedKey: sshKey, PasswordlessSudo: passwordlessSudo})
+					cmds := (&modules.UserModule{}).Plan(&system.UserConfig{Username: userName, AuthorizedKey: sshKey})
 					return huh.NewText().
 						Title("Paste your SSH public key").
 						Description(
@@ -288,20 +287,18 @@ func runInit(cmd *cobra.Command, args []string) error {
 			},
 			wizardStep{
 				section: "Create User",
-				label:   "Passwordless sudo",
+				label:   "Password for sudo",
 				fieldFn: func() huh.Field {
-					cmds := (&modules.UserModule{}).Plan(&system.UserConfig{Username: userName, AuthorizedKey: sshKey, PasswordlessSudo: passwordlessSudo})
-					return huh.NewConfirm().
-						Title("Passwordless sudo for this user?").
+					return huh.NewInput().
+						Title("Password for sudo").
 						Description(
-							"Allow sudo without entering a password. Convenient for single-user\n"+
-								"servers where SSH key is the main security. If no, you'll provide\n"+
-								"a password in the next step for sudo authentication.\n\n"+
-								"Default: Yes"+
-								formatPlan(cmds)).
-						Value(&passwordlessSudo)
+							"Sudo will require this password. This prevents instant root access\n"+
+								"if the SSH key is ever compromised.\n\n"+
+								"Leave empty to set later with 'sudo passwd " + userName + "'.").
+						Value(&userPassword).
+						Password(true)
 				},
-				value: func() string { return ternaryStr(passwordlessSudo, "yes", "no") },
+				value: func() string { return ternaryStr(userPassword != "", "••••••••", "set later") },
 			},
 		)
 	}
@@ -672,7 +669,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 		}
 		answered = append(answered, answeredStep{section: s.section, label: s.label, val: s.value()})
 
-		if s.label == "Passwordless sudo" {
+		if s.label == "Password for sudo" {
 			otherUsers, _ = modules.ListOtherUsers(strings.TrimSpace(userName))
 			if len(otherUsers) > 0 {
 				stepNum++
@@ -707,26 +704,6 @@ func runInit(cmd *cobra.Command, args []string) error {
 					val:     ternaryStr(removeOtherUsers, "yes", "no"),
 				})
 			}
-		}
-
-		if s.label == "Passwordless sudo" && !passwordlessSudo {
-			stepNum++
-			renderHeader(stepNum, total, answered)
-			if err := huh.NewForm(huh.NewGroup(
-				huh.NewInput().
-					Title("Password for sudo").
-					Description(
-						"Enter a password for sudo. Leave empty to set later with 'sudo passwd " + userName + "'.").
-					Value(&userPassword).
-					Password(true),
-			)).WithTheme(wizardTheme()).Run(); err != nil {
-				return err
-			}
-			answered = append(answered, answeredStep{
-				section: "Create User",
-				label:   "Password for sudo",
-				val:     ternaryStr(userPassword != "", "••••••••", "—"),
-			})
 		}
 
 		if s.label == "Add SSH public key" && addSSHKey {
@@ -766,7 +743,6 @@ func runInit(cmd *cobra.Command, args []string) error {
 	if contains(selectedFeatures, "user") {
 		userCfg.Username = strings.TrimSpace(userName)
 		userCfg.AuthorizedKey = strings.TrimSpace(sshKey)
-		userCfg.PasswordlessSudo = passwordlessSudo
 		userCfg.Password = userPassword
 		sshCfg.AuthorizedKeyUser = userCfg.Username
 	} else {
@@ -840,6 +816,19 @@ func runInit(cmd *cobra.Command, args []string) error {
 			fmt.Printf("  %s %s (skipped)\n", checkStyle.Render("✓"), f)
 		}
 	} else {
+		var aptUpdateErr error
+		_ = spinner.New().
+			Title("Updating package lists...").
+			Action(func() {
+				aptUpdateErr = system.AptUpdate()
+			}).
+			Run()
+		if aptUpdateErr != nil {
+			fmt.Fprintf(os.Stderr, "  ✗ apt-get update: %v\n", aptUpdateErr)
+		} else {
+			fmt.Printf("  %s Package lists updated\n", checkStyle.Render("✓"))
+		}
+
 		applyFn := func() {
 			if contains(selectedFeatures, "user") && userCfg.Username != "" {
 				if removeOtherUsers && len(otherUsers) > 0 {
@@ -891,6 +880,17 @@ func runInit(cmd *cobra.Command, args []string) error {
 			Title("Applying hardening configuration...").
 			Action(applyFn).
 			Run()
+
+		if contains(selectedFeatures, "upgrades") {
+			var upgradeErr error
+			_ = spinner.New().
+				Title("Upgrading installed packages...").
+				Action(func() {
+					upgradeErr = system.AptUpgrade()
+				}).
+				Run()
+			results = append(results, applyResult{"Upgrade packages", upgradeErr})
+		}
 
 		savedCfg := &system.SavedConfig{}
 		if contains(selectedFeatures, "user") && userCfg.Username != "" {
@@ -976,10 +976,8 @@ func buildSummary(features []string, user *system.UserConfig, ssh *system.SSHCon
 		lines = append(lines, "Create User")
 		lines = append(lines, fmt.Sprintf("  Username:         %s", user.Username))
 		lines = append(lines, fmt.Sprintf("  SSH key:          %s", ternaryStr(user.AuthorizedKey != "", "yes", "no")))
-		lines = append(lines, fmt.Sprintf("  Passwordless sudo: %s", ternaryStr(user.PasswordlessSudo, "yes", "no")))
-		if !user.PasswordlessSudo {
-			lines = append(lines, fmt.Sprintf("  Password for sudo: %s", ternaryStr(user.Password != "", "set", "set later with passwd")))
-		}
+		lines = append(lines, fmt.Sprintf("  Sudo:             password required"))
+		lines = append(lines, fmt.Sprintf("  Password:         %s", ternaryStr(user.Password != "", "set", "set later with passwd")))
 		if len(otherUsers) > 0 {
 			lines = append(lines, fmt.Sprintf("  Remove other users (%s): %s", strings.Join(otherUsers, ", "), ternaryStr(removeOtherUsers, "yes", "no")))
 		}

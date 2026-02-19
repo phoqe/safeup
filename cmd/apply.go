@@ -182,6 +182,13 @@ func runApply(cmd *cobra.Command, args []string) error {
 	}
 	var results []result
 
+	fmt.Println("Updating package lists...")
+	if err := system.AptUpdate(); err != nil {
+		fmt.Fprintf(os.Stderr, "✗ apt-get update: %v\n", err)
+	} else {
+		fmt.Println("✓ Package lists updated")
+	}
+
 	if cfg.User != nil && cfg.User.Username != "" {
 		m := &modules.UserModule{}
 		results = append(results, result{m.Name(), m.Apply(cfg.User)})
@@ -221,6 +228,9 @@ func runApply(cmd *cobra.Command, args []string) error {
 	if cfg.Upgrades != nil {
 		m := &modules.UpgradesModule{}
 		results = append(results, result{m.Name(), m.Apply(cfg.Upgrades)})
+
+		fmt.Println("Upgrading installed packages...")
+		results = append(results, result{"Upgrade packages", system.AptUpgrade()})
 	}
 
 	allPassed := true

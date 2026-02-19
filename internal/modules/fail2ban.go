@@ -31,8 +31,8 @@ func (m *Fail2BanModule) Apply(cfg *system.Fail2BanConfig) error {
 enabled = true
 port = %s
 filter = sshd
-backend = systemd
-journalmatch = _SYSTEMD_UNIT=ssh.service + _COMM=sshd
+backend = auto
+logpath = /var/log/auth.log
 maxretry = %d
 bantime = %d
 findtime = 600
@@ -100,13 +100,22 @@ func (m *Fail2BanModule) Verify(cfg *system.Fail2BanConfig) *VerifyResult {
 	if err == nil {
 		content := string(data)
 
-		journalMatch := extractJailValue(content, "journalmatch")
-		hasCorrectMatch := strings.Contains(journalMatch, "ssh.service")
+		backend := extractJailValue(content, "backend")
+		usesSystemd := strings.EqualFold(backend, "systemd")
 		result.Checks = append(result.Checks, Check{
-			Name:     "journalmatch (Ubuntu ssh.service)",
-			Status:   boolCheck(hasCorrectMatch),
-			Expected: "_SYSTEMD_UNIT=ssh.service + _COMM=sshd",
-			Actual:   ternary(hasCorrectMatch, journalMatch, ternary(journalMatch == "", "not set (uses default sshd.service)", journalMatch)),
+			Name:     "backend",
+			Status:   boolCheck(!usesSystemd),
+			Expected: "auto",
+			Actual:   ternary(backend == "", "not set (default)", backend),
+		})
+
+		logpath := extractJailValue(content, "logpath")
+		hasLogpath := logpath != ""
+		result.Checks = append(result.Checks, Check{
+			Name:     "logpath",
+			Status:   boolCheck(hasLogpath),
+			Expected: "/var/log/auth.log",
+			Actual:   ternary(hasLogpath, logpath, "not set"),
 		})
 
 		if maxRetry := extractJailValue(content, "maxretry"); maxRetry != "" {

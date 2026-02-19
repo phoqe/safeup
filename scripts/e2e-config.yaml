@@ -1,6 +1,5 @@
 user:
   username: e2euser
   authorized_key: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI e2e-test-key"
-  passwordless_sudo: true
 
 upgrades: {}
