@@ -17,6 +17,9 @@ type SavedConfig struct {
 	Upgrades *UpgradesConfig `json:"upgrades,omitempty"`
 	Sysctl   *SysctlConfig   `json:"sysctl,omitempty"`
 	AppArmor *AppArmorConfig `json:"apparmor,omitempty"`
+	Shm      *ShmConfig      `json:"shm,omitempty"`
+	Auditd   *AuditdConfig   `json:"auditd,omitempty"`
+	Timesync *TimesyncConfig `json:"timesync,omitempty"`
 }
 
 type UserConfig struct {
@@ -49,6 +52,12 @@ type UpgradesConfig struct{}
 type SysctlConfig struct{}
 
 type AppArmorConfig struct{}
+
+type ShmConfig struct{}
+
+type AuditdConfig struct{}
+
+type TimesyncConfig struct{}
 
 func LoadConfig() (*SavedConfig, error) {
 	data, err := os.ReadFile(ConfigPath)

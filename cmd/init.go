@@ -121,6 +121,9 @@ func runInit(cmd *cobra.Command, args []string) error {
 	upgCfg := system.UpgradesConfig{}
 	sysctlCfg := system.SysctlConfig{}
 	apparmorCfg := system.AppArmorConfig{}
+	shmCfg := system.ShmConfig{}
+	auditdCfg := system.AuditdConfig{}
+	timesyncCfg := system.TimesyncConfig{}
 
 	userCfg := system.UserConfig{}
 	userName := ""
@@ -157,6 +160,9 @@ func runInit(cmd *cobra.Command, args []string) error {
 					huh.NewOption("fail2ban", "fail2ban").Selected(true),
 					huh.NewOption("Kernel Hardening", "sysctl").Selected(true),
 					huh.NewOption("AppArmor", "apparmor").Selected(true),
+					huh.NewOption("/dev/shm Hardening", "shm").Selected(true),
+					huh.NewOption("auditd", "auditd").Selected(true),
+					huh.NewOption("Time Sync", "timesync").Selected(true),
 					huh.NewOption("Unattended Upgrades", "upgrades").Selected(true),
 				).
 				Value(&selectedFeatures),
@@ -239,29 +245,11 @@ func runInit(cmd *cobra.Command, args []string) error {
 					Title("Passwordless sudo for this user?").
 					Description(
 						"Allow sudo without entering a password. Convenient for single-user\n"+
-							"servers where SSH key is the main security. If no, provide a\n"+
-							"password in the next step for sudo authentication.\n\n"+
+							"servers where SSH key is the main security. If no, you'll provide\n"+
+							"a password in the next step for sudo authentication.\n\n"+
 							"Default: Yes").
 					Value(&passwordlessSudo),
 				value: func() string { return ternaryStr(passwordlessSudo, "yes", "no") },
-			},
-			wizardStep{
-				section: "Create User",
-				label:   "Password for sudo",
-				field: huh.NewInput().
-					Title("Password for sudo").
-					Description(
-						"Only needed if you chose password required for sudo. Leave empty\n"+
-							"to set later with 'sudo passwd <user>'.").
-					Value(&userPassword).
-					Password(true).
-					Validate(func(s string) error { return nil }),
-				value: func() string {
-					if userPassword == "" {
-						return "—"
-					}
-					return "••••••••"
-				},
 			},
 		)
 	}
@@ -432,24 +420,75 @@ func runInit(cmd *cobra.Command, args []string) error {
 		)
 	}
 
-	if contains(selectedFeatures, "apparmor") {
-		steps = append(steps,
-			wizardStep{
-				section: "AppArmor",
-				label:   "Enable",
-				field: huh.NewNote().
-					Title("AppArmor").
-					Description(
-						"Ensure AppArmor is enabled and in enforcing mode.\n"+
-							"AppArmor provides mandatory access control for applications.").
-					Next(true).
-					NextLabel("Next"),
-				value: func() string { return "enabled" },
-			},
-		)
-	}
+		if contains(selectedFeatures, "apparmor") {
+			steps = append(steps,
+				wizardStep{
+					section: "AppArmor",
+					label:   "Enable",
+					field: huh.NewNote().
+						Title("AppArmor").
+						Description(
+							"Ensure AppArmor is enabled and in enforcing mode.\n"+
+								"AppArmor provides mandatory access control for applications.").
+						Next(true).
+						NextLabel("Next"),
+					value: func() string { return "enabled" },
+				},
+			)
+		}
 
-	if contains(selectedFeatures, "upgrades") {
+		if contains(selectedFeatures, "shm") {
+			steps = append(steps,
+				wizardStep{
+					section: "/dev/shm Hardening",
+					label:   "Enable",
+					field: huh.NewNote().
+						Title("/dev/shm Hardening").
+						Description(
+							"Mount shared memory with noexec,nosuid,nodev to reduce\n"+
+								"risk of executable abuse in /dev/shm.").
+						Next(true).
+						NextLabel("Next"),
+					value: func() string { return "enabled" },
+				},
+			)
+		}
+
+		if contains(selectedFeatures, "auditd") {
+			steps = append(steps,
+				wizardStep{
+					section: "auditd",
+					label:   "Enable",
+					field: huh.NewNote().
+						Title("auditd").
+						Description(
+							"Enable audit logging for auth and sudo events.\n"+
+								"Useful for forensics and compliance.").
+						Next(true).
+						NextLabel("Next"),
+					value: func() string { return "enabled" },
+				},
+			)
+		}
+
+		if contains(selectedFeatures, "timesync") {
+			steps = append(steps,
+				wizardStep{
+					section: "Time Sync",
+					label:   "Enable",
+					field: huh.NewNote().
+						Title("Time Sync").
+						Description(
+							"Ensure system time is synchronized via systemd-timesyncd,\n"+
+								"chrony, or ntp. Important for logs and TLS.").
+						Next(true).
+						NextLabel("Next"),
+					value: func() string { return "enabled" },
+				},
+			)
+		}
+
+		if contains(selectedFeatures, "upgrades") {
 		steps = append(steps,
 			wizardStep{
 				section: "Unattended Upgrades",
@@ -471,6 +510,9 @@ func runInit(cmd *cobra.Command, args []string) error {
 	if contains(selectedFeatures, "ssh") && !contains(selectedFeatures, "user") {
 		total++
 	}
+	if contains(selectedFeatures, "user") {
+		total++
+	}
 	var answered []answeredStep
 
 	stepNum := 0
@@ -481,6 +523,26 @@ func runInit(cmd *cobra.Command, args []string) error {
 			return err
 		}
 		answered = append(answered, answeredStep{section: s.section, label: s.label, val: s.value()})
+
+		if s.label == "Passwordless sudo" && !passwordlessSudo {
+			stepNum++
+			renderHeader(stepNum, total, answered)
+			if err := huh.NewForm(huh.NewGroup(
+				huh.NewInput().
+					Title("Password for sudo").
+					Description(
+						"Enter a password for sudo. Leave empty to set later with 'sudo passwd " + userName + "'.").
+					Value(&userPassword).
+					Password(true),
+			)).WithTheme(wizardTheme()).Run(); err != nil {
+				return err
+			}
+			answered = append(answered, answeredStep{
+				section: "Create User",
+				label:   "Password for sudo",
+				val:     ternaryStr(userPassword != "", "••••••••", "—"),
+			})
+		}
 
 		if s.label == "Add SSH public key" && addSSHKey {
 			stepNum++
@@ -558,7 +620,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 		huh.NewGroup(
 			huh.NewNote().
 				Title("Review your configuration").
-				Description(buildSummary(selectedFeatures, &userCfg, &sshCfg, &ufwCfg, &f2bCfg, &upgCfg, &sysctlCfg, &apparmorCfg)),
+				Description(buildSummary(selectedFeatures, &userCfg, &sshCfg, &ufwCfg, &f2bCfg, &upgCfg, &sysctlCfg, &apparmorCfg, &shmCfg, &auditdCfg, &timesyncCfg)),
 			huh.NewConfirm().
 				Title("Apply these changes?").
 				Value(&confirm).
@@ -614,6 +676,18 @@ func runInit(cmd *cobra.Command, args []string) error {
 				m := &modules.AppArmorModule{}
 				results = append(results, applyResult{m.Name(), m.Apply(&apparmorCfg)})
 			}
+			if contains(selectedFeatures, "shm") {
+				m := &modules.ShmModule{}
+				results = append(results, applyResult{m.Name(), m.Apply(&shmCfg)})
+			}
+			if contains(selectedFeatures, "auditd") {
+				m := &modules.AuditdModule{}
+				results = append(results, applyResult{m.Name(), m.Apply(&auditdCfg)})
+			}
+			if contains(selectedFeatures, "timesync") {
+				m := &modules.TimesyncModule{}
+				results = append(results, applyResult{m.Name(), m.Apply(&timesyncCfg)})
+			}
 			if contains(selectedFeatures, "upgrades") {
 				m := &modules.UpgradesModule{}
 				results = append(results, applyResult{m.Name(), m.Apply(&upgCfg)})
@@ -643,6 +717,15 @@ func runInit(cmd *cobra.Command, args []string) error {
 		}
 		if contains(selectedFeatures, "apparmor") {
 			savedCfg.AppArmor = &apparmorCfg
+		}
+		if contains(selectedFeatures, "shm") {
+			savedCfg.Shm = &shmCfg
+		}
+		if contains(selectedFeatures, "auditd") {
+			savedCfg.Auditd = &auditdCfg
+		}
+		if contains(selectedFeatures, "timesync") {
+			savedCfg.Timesync = &timesyncCfg
 		}
 		if contains(selectedFeatures, "upgrades") {
 			savedCfg.Upgrades = &upgCfg
@@ -693,7 +776,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-func buildSummary(features []string, user *system.UserConfig, ssh *system.SSHConfig, ufw *system.UFWConfig, f2b *system.Fail2BanConfig, upg *system.UpgradesConfig, _ *system.SysctlConfig, _ *system.AppArmorConfig) string {
+func buildSummary(features []string, user *system.UserConfig, ssh *system.SSHConfig, ufw *system.UFWConfig, f2b *system.Fail2BanConfig, upg *system.UpgradesConfig, _ *system.SysctlConfig, _ *system.AppArmorConfig, _ *system.ShmConfig, _ *system.AuditdConfig, _ *system.TimesyncConfig) string {
 	var lines []string
 
 	if contains(features, "user") && user.Username != "" {
@@ -742,6 +825,24 @@ func buildSummary(features []string, user *system.UserConfig, ssh *system.SSHCon
 	if contains(features, "apparmor") {
 		lines = append(lines, "AppArmor")
 		lines = append(lines, "  Enforce mode: enabled")
+		lines = append(lines, "")
+	}
+
+	if contains(features, "shm") {
+		lines = append(lines, "/dev/shm Hardening")
+		lines = append(lines, "  noexec,nosuid,nodev: enabled")
+		lines = append(lines, "")
+	}
+
+	if contains(features, "auditd") {
+		lines = append(lines, "auditd")
+		lines = append(lines, "  Auth and sudo audit: enabled")
+		lines = append(lines, "")
+	}
+
+	if contains(features, "timesync") {
+		lines = append(lines, "Time Sync")
+		lines = append(lines, "  NTP/time sync: enabled")
 		lines = append(lines, "")
 	}
 

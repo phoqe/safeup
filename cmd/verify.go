@@ -81,6 +81,18 @@ func runVerify(cmd *cobra.Command, args []string) error {
 		m := &modules.AppArmorModule{}
 		results = append(results, m.Verify(cfg.AppArmor))
 	}
+	if cfg.Shm != nil {
+		m := &modules.ShmModule{}
+		results = append(results, m.Verify(cfg.Shm))
+	}
+	if cfg.Auditd != nil {
+		m := &modules.AuditdModule{}
+		results = append(results, m.Verify(cfg.Auditd))
+	}
+	if cfg.Timesync != nil {
+		m := &modules.TimesyncModule{}
+		results = append(results, m.Verify(cfg.Timesync))
+	}
 
 	totalChecks := 0
 	passedChecks := 0
