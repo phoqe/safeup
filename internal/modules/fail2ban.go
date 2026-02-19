@@ -32,6 +32,7 @@ enabled = true
 port = %s
 filter = sshd
 backend = systemd
+journalmatch = _SYSTEMD_UNIT=ssh.service + _COMM=sshd
 maxretry = %d
 bantime = %d
 findtime = 600
@@ -98,6 +99,16 @@ func (m *Fail2BanModule) Verify(cfg *system.Fail2BanConfig) *VerifyResult {
 	data, err := os.ReadFile(jailLocalPath)
 	if err == nil {
 		content := string(data)
+
+		journalMatch := extractJailValue(content, "journalmatch")
+		hasCorrectMatch := strings.Contains(journalMatch, "ssh.service")
+		result.Checks = append(result.Checks, Check{
+			Name:     "journalmatch (Ubuntu ssh.service)",
+			Status:   boolCheck(hasCorrectMatch),
+			Expected: "_SYSTEMD_UNIT=ssh.service + _COMM=sshd",
+			Actual:   ternary(hasCorrectMatch, journalMatch, ternary(journalMatch == "", "not set (uses default sshd.service)", journalMatch)),
+		})
+
 		if maxRetry := extractJailValue(content, "maxretry"); maxRetry != "" {
 			actual, _ := strconv.Atoi(maxRetry)
 			status := StatusPass

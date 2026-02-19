@@ -312,6 +312,24 @@ func auditFail2Ban() []auditCheck {
 		checks = append(checks, auditCheck{cat, "SSH jail", auditWarn, "no SSH jail configured"})
 	}
 
+	data, readErr := os.ReadFile("/etc/fail2ban/jail.local")
+	if readErr == nil {
+		content := string(data)
+		backend := extractAuditJailValue(content, "backend")
+		if backend == "systemd" {
+			journalMatch := extractAuditJailValue(content, "journalmatch")
+			if strings.Contains(journalMatch, "ssh.service") {
+				checks = append(checks, auditCheck{cat, "journalmatch targets ssh.service", auditPass, ""})
+			} else if journalMatch == "" {
+				checks = append(checks, auditCheck{cat, "journalmatch", auditFail,
+					"not set — default uses sshd.service which does not exist on Ubuntu"})
+			} else if strings.Contains(journalMatch, "sshd.service") {
+				checks = append(checks, auditCheck{cat, "journalmatch", auditFail,
+					"targets sshd.service — Ubuntu uses ssh.service, fail2ban will see zero failures"})
+			}
+		}
+	}
+
 	return checks
 }
 
@@ -522,6 +540,22 @@ func getSSHValue(content, key string) string {
 		parts := strings.Fields(line)
 		if len(parts) >= 2 && strings.EqualFold(parts[0], key) {
 			return parts[1]
+		}
+	}
+	return ""
+}
+
+func extractAuditJailValue(content, key string) string {
+	for _, line := range strings.Split(content, "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "#") || line == "" {
+			continue
+		}
+		if strings.HasPrefix(line, key) {
+			parts := strings.SplitN(line, "=", 2)
+			if len(parts) == 2 {
+				return strings.TrimSpace(parts[1])
+			}
 		}
 	}
 	return ""
