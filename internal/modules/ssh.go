@@ -45,6 +45,12 @@ func (m *SSHModule) Apply(cfg *system.SSHConfig) error {
 		return fmt.Errorf("cannot write sshd_config: %w", err)
 	}
 
+	if cfg.AuthorizedKey != "" {
+		if err := installAuthorizedKey(cfg.AuthorizedKey); err != nil {
+			return fmt.Errorf("failed to install SSH key: %w", err)
+		}
+	}
+
 	result, err := system.Run("sshd", "-t")
 	if err != nil {
 		return fmt.Errorf("sshd config test failed: %w", err)
@@ -54,6 +60,34 @@ func (m *SSHModule) Apply(cfg *system.SSHConfig) error {
 	}
 
 	return system.ServiceAction("sshd", "restart")
+}
+
+func installAuthorizedKey(pubKey string) error {
+	pubKey = strings.TrimSpace(pubKey)
+	if pubKey == "" {
+		return nil
+	}
+
+	sshDir := "/root/.ssh"
+	authKeysPath := sshDir + "/authorized_keys"
+
+	if err := os.MkdirAll(sshDir, 0700); err != nil {
+		return fmt.Errorf("cannot create %s: %w", sshDir, err)
+	}
+
+	existing, _ := os.ReadFile(authKeysPath)
+	if strings.Contains(string(existing), pubKey) {
+		return nil
+	}
+
+	f, err := os.OpenFile(authKeysPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600)
+	if err != nil {
+		return fmt.Errorf("cannot open authorized_keys: %w", err)
+	}
+	defer f.Close()
+
+	_, err = fmt.Fprintf(f, "%s\n", pubKey)
+	return err
 }
 
 func (m *SSHModule) Verify(cfg *system.SSHConfig) *VerifyResult {

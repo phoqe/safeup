@@ -20,6 +20,7 @@ type SSHConfig struct {
 	DisableRootLogin    bool   `json:"disable_root_login"`
 	DisablePasswordAuth bool   `json:"disable_password_auth"`
 	Port                string `json:"port"`
+	AuthorizedKey       string `json:"authorized_key,omitempty"`
 }
 
 type UFWConfig struct {
