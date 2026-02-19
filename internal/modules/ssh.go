@@ -59,7 +59,7 @@ func (m *SSHModule) Apply(cfg *system.SSHConfig) error {
 		return fmt.Errorf("sshd config is invalid: %s", result.Stderr)
 	}
 
-	return system.ServiceAction("sshd", "restart")
+	return system.ServiceAction("ssh", "restart")
 }
 
 func installAuthorizedKey(pubKey string) error {

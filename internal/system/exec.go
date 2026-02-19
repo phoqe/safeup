@@ -49,6 +49,7 @@ func IsInstalled(pkg string) bool {
 }
 
 func AptInstall(packages ...string) error {
+	Run("apt-get", "update")
 	args := append([]string{"install", "-y"}, packages...)
 	result, err := Run("apt-get", args...)
 	if err != nil {
