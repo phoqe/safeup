@@ -35,6 +35,14 @@ func (m *AppArmorModule) Apply(cfg *system.AppArmorConfig) error {
 	return system.ServiceAction("apparmor", "enable")
 }
 
+func (m *AppArmorModule) Plan(cfg *system.AppArmorConfig) []string {
+	var cmds []string
+	cmds = append(cmds, "apt-get install -y apparmor")
+	cmds = append(cmds, "systemctl start apparmor")
+	cmds = append(cmds, "systemctl enable apparmor")
+	return cmds
+}
+
 func (m *AppArmorModule) Verify(cfg *system.AppArmorConfig) *VerifyResult {
 	result := &VerifyResult{ModuleName: m.Name()}
 

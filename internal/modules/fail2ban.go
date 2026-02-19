@@ -48,6 +48,16 @@ findtime = 600
 	return system.ServiceAction("fail2ban", "restart")
 }
 
+func (m *Fail2BanModule) Plan(cfg *system.Fail2BanConfig) []string {
+	var cmds []string
+	cmds = append(cmds, "apt-get install -y fail2ban")
+	cmds = append(cmds, "cp /etc/fail2ban/jail.local /etc/fail2ban/jail.local.bak.*")
+	cmds = append(cmds, "write /etc/fail2ban/jail.local (maxretry="+strconv.Itoa(cfg.MaxRetry)+", bantime="+strconv.Itoa(cfg.BanTime)+")")
+	cmds = append(cmds, "systemctl enable fail2ban")
+	cmds = append(cmds, "systemctl restart fail2ban")
+	return cmds
+}
+
 func (m *Fail2BanModule) Verify(cfg *system.Fail2BanConfig) *VerifyResult {
 	result := &VerifyResult{ModuleName: m.Name()}
 

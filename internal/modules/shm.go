@@ -52,6 +52,13 @@ func (m *ShmModule) Apply(cfg *system.ShmConfig) error {
 	return nil
 }
 
+func (m *ShmModule) Plan(cfg *system.ShmConfig) []string {
+	return []string{
+		"write /etc/fstab (add/update /dev/shm with noexec,nosuid,nodev)",
+		"mount -o remount /dev/shm",
+	}
+}
+
 func (m *ShmModule) Verify(cfg *system.ShmConfig) *VerifyResult {
 	result := &VerifyResult{ModuleName: m.Name()}
 

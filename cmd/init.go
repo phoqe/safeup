@@ -84,6 +84,13 @@ func runForm(f huh.Field) error {
 	return huh.NewForm(huh.NewGroup(f)).WithTheme(wizardTheme()).Run()
 }
 
+func formatPlan(cmds []string) string {
+	if len(cmds) == 0 {
+		return ""
+	}
+	return "\n\nCommands:\n  " + strings.Join(cmds, "\n  ")
+}
+
 func runInit(cmd *cobra.Command, args []string) error {
 	var err error
 
@@ -186,6 +193,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 		section string
 		label   string
 		field   huh.Field
+		fieldFn func() huh.Field
 		value   func() string
 	}
 
@@ -196,64 +204,80 @@ func runInit(cmd *cobra.Command, args []string) error {
 			wizardStep{
 				section: "Create User",
 				label:   "Username",
-				field: huh.NewInput().
-					Title("Username for new user").
-					Description(
-						"Create a non-root user with sudo access. You will use this user\n"+
-							"instead of root for SSH. Required when disabling root login.\n\n"+
-							"Use lowercase letters, numbers, hyphens only.").
-					Value(&userName).
-					Validate(func(s string) error {
-						s = strings.TrimSpace(s)
-						if s == "" {
-							return fmt.Errorf("username cannot be empty")
-						}
-						if s == "root" {
-							return fmt.Errorf("cannot create user named root")
-						}
-						for _, c := range s {
-							if (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-' || c == '_' {
-								continue
+				fieldFn: func() huh.Field {
+					u := userName
+					if u == "" {
+						u = "<username>"
+					}
+					cmds := (&modules.UserModule{}).Plan(&system.UserConfig{Username: u, AuthorizedKey: sshKey, PasswordlessSudo: passwordlessSudo})
+					return huh.NewInput().
+						Title("Username for new user").
+						Description(
+							"Create a non-root user with sudo access. You will use this user\n"+
+								"instead of root for SSH. Required when disabling root login.\n\n"+
+								"Use lowercase letters, numbers, hyphens only."+
+								formatPlan(cmds)).
+						Value(&userName).
+						Validate(func(s string) error {
+							s = strings.TrimSpace(s)
+							if s == "" {
+								return fmt.Errorf("username cannot be empty")
 							}
-							return fmt.Errorf("use only lowercase letters, numbers, hyphens, underscores")
-						}
-						return nil
-					}),
+							if s == "root" {
+								return fmt.Errorf("cannot create user named root")
+							}
+							for _, c := range s {
+								if (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-' || c == '_' {
+									continue
+								}
+								return fmt.Errorf("use only lowercase letters, numbers, hyphens, underscores")
+							}
+							return nil
+						})
+				},
 				value: func() string { return userName },
 			},
 			wizardStep{
 				section: "Create User",
 				label:   "SSH public key",
-				field: huh.NewText().
-					Title("Paste your SSH public key").
-					Description(
-						"Paste the contents of your public key (e.g. ~/.ssh/id_ed25519.pub).\n"+
-							"It starts with 'ssh-ed25519', 'ssh-rsa', or similar.\n\n"+
-							"This will be added to the new user's authorized_keys.").
-					Value(&sshKey).
-					Validate(func(s string) error {
-						s = strings.TrimSpace(s)
-						if s == "" {
-							return fmt.Errorf("key cannot be empty")
-						}
-						if !strings.HasPrefix(s, "ssh-") && !strings.HasPrefix(s, "ecdsa-") {
-							return fmt.Errorf("doesn't look like a public key (should start with ssh- or ecdsa-)")
-						}
-						return nil
-					}),
+				fieldFn: func() huh.Field {
+					cmds := (&modules.UserModule{}).Plan(&system.UserConfig{Username: userName, AuthorizedKey: sshKey, PasswordlessSudo: passwordlessSudo})
+					return huh.NewText().
+						Title("Paste your SSH public key").
+						Description(
+							"Paste the contents of your public key (e.g. ~/.ssh/id_ed25519.pub).\n"+
+								"It starts with 'ssh-ed25519', 'ssh-rsa', or similar.\n\n"+
+								"This will be added to the new user's authorized_keys."+
+								formatPlan(cmds)).
+						Value(&sshKey).
+						Validate(func(s string) error {
+							s = strings.TrimSpace(s)
+							if s == "" {
+								return fmt.Errorf("key cannot be empty")
+							}
+							if !strings.HasPrefix(s, "ssh-") && !strings.HasPrefix(s, "ecdsa-") {
+								return fmt.Errorf("doesn't look like a public key (should start with ssh- or ecdsa-)")
+							}
+							return nil
+						})
+				},
 				value: func() string { return sshKey[:min(30, len(sshKey))] + "…" },
 			},
 			wizardStep{
 				section: "Create User",
 				label:   "Passwordless sudo",
-				field: huh.NewConfirm().
-					Title("Passwordless sudo for this user?").
-					Description(
-						"Allow sudo without entering a password. Convenient for single-user\n"+
-							"servers where SSH key is the main security. If no, you'll provide\n"+
-							"a password in the next step for sudo authentication.\n\n"+
-							"Default: Yes").
-					Value(&passwordlessSudo),
+				fieldFn: func() huh.Field {
+					cmds := (&modules.UserModule{}).Plan(&system.UserConfig{Username: userName, AuthorizedKey: sshKey, PasswordlessSudo: passwordlessSudo})
+					return huh.NewConfirm().
+						Title("Passwordless sudo for this user?").
+						Description(
+							"Allow sudo without entering a password. Convenient for single-user\n"+
+								"servers where SSH key is the main security. If no, you'll provide\n"+
+								"a password in the next step for sudo authentication.\n\n"+
+								"Default: Yes"+
+								formatPlan(cmds)).
+						Value(&passwordlessSudo)
+				},
 				value: func() string { return ternaryStr(passwordlessSudo, "yes", "no") },
 			},
 		)
@@ -264,47 +288,62 @@ func runInit(cmd *cobra.Command, args []string) error {
 			wizardStep{
 				section: "SSH Hardening",
 				label:   "Disable root login",
-				field: huh.NewConfirm().
-					Title("Disable root login via SSH?").
-					Description(
-						"The root account has full system access and is the most targeted\n"+
-							"by automated attacks. Disabling it forces use of a regular user\n"+
-							"with sudo, adding an extra layer of protection.\n\n"+
-							"Default: Yes (strongly recommended)").
-					Value(&sshCfg.DisableRootLogin),
+				fieldFn: func() huh.Field {
+					cfg := system.SSHConfig{DisableRootLogin: sshCfg.DisableRootLogin, DisablePasswordAuth: sshCfg.DisablePasswordAuth, Port: sshPort, AuthorizedKeyUser: userName}
+					cmds := (&modules.SSHModule{}).Plan(&cfg)
+					return huh.NewConfirm().
+						Title("Disable root login via SSH?").
+						Description(
+							"The root account has full system access and is the most targeted\n"+
+								"by automated attacks. Disabling it forces use of a regular user\n"+
+								"with sudo, adding an extra layer of protection.\n\n"+
+								"Default: Yes (strongly recommended)"+
+								formatPlan(cmds)).
+						Value(&sshCfg.DisableRootLogin)
+				},
 				value: func() string { return ternaryStr(sshCfg.DisableRootLogin, "yes", "no") },
 			},
 			wizardStep{
 				section: "SSH Hardening",
 				label:   "Disable password auth",
-				field: huh.NewConfirm().
-					Title("Disable password authentication?").
-					Description(
-						"Password-based SSH is vulnerable to brute-force attacks. SSH keys\n"+
-							"use cryptographic authentication that is virtually impossible to\n"+
-							"guess. Ensure you have an SSH key set up before enabling.\n\n"+
-							"Default: Yes (requires SSH key to be already configured)").
-					Value(&sshCfg.DisablePasswordAuth),
+				fieldFn: func() huh.Field {
+					cfg := system.SSHConfig{DisableRootLogin: sshCfg.DisableRootLogin, DisablePasswordAuth: sshCfg.DisablePasswordAuth, Port: sshPort, AuthorizedKeyUser: userName}
+					cmds := (&modules.SSHModule{}).Plan(&cfg)
+					return huh.NewConfirm().
+						Title("Disable password authentication?").
+						Description(
+							"Password-based SSH is vulnerable to brute-force attacks. SSH keys\n"+
+								"use cryptographic authentication that is virtually impossible to\n"+
+								"guess. Ensure you have an SSH key set up before enabling.\n\n"+
+								"Default: Yes (requires SSH key to be already configured)"+
+								formatPlan(cmds)).
+						Value(&sshCfg.DisablePasswordAuth)
+				},
 				value: func() string { return ternaryStr(sshCfg.DisablePasswordAuth, "yes", "no") },
 			},
 			wizardStep{
 				section: "SSH Hardening",
 				label:   "SSH port",
-				field: huh.NewInput().
-					Title("SSH port").
-					Description(
-						"Moving SSH off port 22 dramatically reduces automated scan noise.\n"+
-							"Bots overwhelmingly target port 22. This won't stop determined\n"+
-							"attackers but cuts log spam significantly.\n\n"+
-							"Default: 2222").
-					Value(&sshPort).
-					Validate(func(s string) error {
-						port, err := strconv.Atoi(s)
-						if err != nil || port < 1 || port > 65535 {
-							return fmt.Errorf("enter a valid port (1-65535)")
-						}
-						return nil
-					}),
+				fieldFn: func() huh.Field {
+					cfg := system.SSHConfig{DisableRootLogin: sshCfg.DisableRootLogin, DisablePasswordAuth: sshCfg.DisablePasswordAuth, Port: sshPort, AuthorizedKeyUser: userName}
+					cmds := (&modules.SSHModule{}).Plan(&cfg)
+					return huh.NewInput().
+						Title("SSH port").
+						Description(
+							"Moving SSH off port 22 dramatically reduces automated scan noise.\n"+
+								"Bots overwhelmingly target port 22. This won't stop determined\n"+
+								"attackers but cuts log spam significantly.\n\n"+
+								"Default: 2222"+
+								formatPlan(cmds)).
+						Value(&sshPort).
+						Validate(func(s string) error {
+							port, err := strconv.Atoi(s)
+							if err != nil || port < 1 || port > 65535 {
+								return fmt.Errorf("enter a valid port (1-65535)")
+							}
+							return nil
+						})
+				},
 				value: func() string { return sshPort },
 			},
 		)
@@ -313,13 +352,18 @@ func runInit(cmd *cobra.Command, args []string) error {
 				wizardStep{
 					section: "SSH Hardening",
 					label:   "Add SSH public key",
-					field: huh.NewConfirm().
-						Title("Add an authorized SSH public key to root?").
-						Description(
-							"Adds your public key to /root/.ssh/authorized_keys. Use this only\n"+
-								"if you did not create a new user. Recommended: create a user instead.\n\n"+
-								"Default: Yes").
-						Value(&addSSHKey),
+					fieldFn: func() huh.Field {
+						cfg := system.SSHConfig{DisableRootLogin: sshCfg.DisableRootLogin, DisablePasswordAuth: sshCfg.DisablePasswordAuth, Port: sshPort, AuthorizedKey: sshKey}
+						cmds := (&modules.SSHModule{}).Plan(&cfg)
+						return huh.NewConfirm().
+							Title("Add an authorized SSH public key to root?").
+							Description(
+								"Adds your public key to /root/.ssh/authorized_keys. Use this only\n"+
+									"if you did not create a new user. Recommended: create a user instead.\n\n"+
+									"Default: Yes"+
+									formatPlan(cmds)).
+							Value(&addSSHKey)
+					},
 					value: func() string { return ternaryStr(addSSHKey, "yes", "no") },
 				},
 			)
@@ -331,33 +375,55 @@ func runInit(cmd *cobra.Command, args []string) error {
 			wizardStep{
 				section: "UFW Firewall",
 				label:   "Allowed ports",
-				field: huh.NewInput().
-					Title("Allowed incoming ports").
-					Description(
-						"UFW will block all incoming traffic by default and only allow\n"+
-							"the ports listed here. You need at least your SSH port to\n"+
-							"stay connected. Add 80/tcp and 443/tcp for a web server.\n\n"+
-							"Format: comma-separated, e.g. 2222/tcp, 80/tcp, 443/tcp").
-					Value(&portsStr).
-					Validate(func(s string) error {
-						if strings.TrimSpace(s) == "" {
-							return fmt.Errorf("at least one port is required")
+				fieldFn: func() huh.Field {
+					parsed := make([]string, 0)
+					for _, p := range strings.Split(portsStr, ",") {
+						if t := strings.TrimSpace(p); t != "" {
+							parsed = append(parsed, t)
 						}
-						return nil
-					}),
+					}
+					cfg := system.UFWConfig{AllowedPorts: parsed, RateLimitSSH: ufwCfg.RateLimitSSH}
+					cmds := (&modules.UFWModule{}).Plan(&cfg)
+					return huh.NewInput().
+						Title("Allowed incoming ports").
+						Description(
+							"UFW will block all incoming traffic by default and only allow\n"+
+								"the ports listed here. You need at least your SSH port to\n"+
+								"stay connected. Add 80/tcp and 443/tcp for a web server.\n\n"+
+								"Format: comma-separated, e.g. 2222/tcp, 80/tcp, 443/tcp"+
+								formatPlan(cmds)).
+						Value(&portsStr).
+						Validate(func(s string) error {
+							if strings.TrimSpace(s) == "" {
+								return fmt.Errorf("at least one port is required")
+							}
+							return nil
+						})
+				},
 				value: func() string { return portsStr },
 			},
 			wizardStep{
 				section: "UFW Firewall",
 				label:   "Rate-limit SSH",
-				field: huh.NewConfirm().
-					Title("Rate-limit SSH port?").
-					Description(
-						"UFW rate limiting allows max 6 connections per 30 seconds from\n"+
-							"a single IP. This slows down brute-force attacks without\n"+
-							"affecting normal interactive SSH usage.\n\n"+
-							"Default: Yes").
-					Value(&ufwCfg.RateLimitSSH),
+				fieldFn: func() huh.Field {
+					parsed := make([]string, 0)
+					for _, p := range strings.Split(portsStr, ",") {
+						if t := strings.TrimSpace(p); t != "" {
+							parsed = append(parsed, t)
+						}
+					}
+					cfg := system.UFWConfig{AllowedPorts: parsed, RateLimitSSH: ufwCfg.RateLimitSSH}
+					cmds := (&modules.UFWModule{}).Plan(&cfg)
+					return huh.NewConfirm().
+						Title("Rate-limit SSH port?").
+						Description(
+							"UFW rate limiting allows max 6 connections per 30 seconds from\n"+
+								"a single IP. This slows down brute-force attacks without\n"+
+								"affecting normal interactive SSH usage.\n\n"+
+								"Default: Yes"+
+								formatPlan(cmds)).
+						Value(&ufwCfg.RateLimitSSH)
+				},
 				value: func() string { return ternaryStr(ufwCfg.RateLimitSSH, "yes", "no") },
 			},
 		)
@@ -368,41 +434,67 @@ func runInit(cmd *cobra.Command, args []string) error {
 			wizardStep{
 				section: "fail2ban",
 				label:   "Max retries",
-				field: huh.NewInput().
-					Title("Max retries before ban").
-					Description(
-						"After this many failed SSH login attempts from one IP, fail2ban\n"+
-							"bans it. Lower values are more aggressive but could lock out\n"+
-							"legitimate users who mistype their password.\n\n"+
-							"Default: 3 (good balance between security and usability)").
-					Value(&maxRetryStr).
-					Validate(func(s string) error {
-						n, err := strconv.Atoi(s)
-						if err != nil || n < 1 {
-							return fmt.Errorf("enter a positive number")
-						}
-						return nil
-					}),
+				fieldFn: func() huh.Field {
+					maxRetry, _ := strconv.Atoi(maxRetryStr)
+					banTime, _ := strconv.Atoi(banTimeStr)
+					if maxRetry == 0 {
+						maxRetry = 3
+					}
+					if banTime == 0 {
+						banTime = 86400
+					}
+					cfg := system.Fail2BanConfig{MaxRetry: maxRetry, BanTime: banTime}
+					cmds := (&modules.Fail2BanModule{}).Plan(&cfg)
+					return huh.NewInput().
+						Title("Max retries before ban").
+						Description(
+							"After this many failed SSH login attempts from one IP, fail2ban\n"+
+								"bans it. Lower values are more aggressive but could lock out\n"+
+								"legitimate users who mistype their password.\n\n"+
+								"Default: 3 (good balance between security and usability)"+
+								formatPlan(cmds)).
+						Value(&maxRetryStr).
+						Validate(func(s string) error {
+							n, err := strconv.Atoi(s)
+							if err != nil || n < 1 {
+								return fmt.Errorf("enter a positive number")
+							}
+							return nil
+						})
+				},
 				value: func() string { return maxRetryStr },
 			},
 			wizardStep{
 				section: "fail2ban",
 				label:   "Ban time",
-				field: huh.NewInput().
-					Title("Ban time (seconds)").
-					Description(
-						"How long a banned IP stays blocked. Longer bans punish attackers\n"+
-							"more, but also affect anyone accidentally banned. The IP is\n"+
-							"automatically unbanned after this duration.\n\n"+
-							"Default: 86400 (24 hours)  —  3600 = 1h, 604800 = 1w").
-					Value(&banTimeStr).
-					Validate(func(s string) error {
-						n, err := strconv.Atoi(s)
-						if err != nil || n < 60 {
-							return fmt.Errorf("enter at least 60 seconds")
-						}
-						return nil
-					}),
+				fieldFn: func() huh.Field {
+					maxRetry, _ := strconv.Atoi(maxRetryStr)
+					banTime, _ := strconv.Atoi(banTimeStr)
+					if maxRetry == 0 {
+						maxRetry = 3
+					}
+					if banTime == 0 {
+						banTime = 86400
+					}
+					cfg := system.Fail2BanConfig{MaxRetry: maxRetry, BanTime: banTime}
+					cmds := (&modules.Fail2BanModule{}).Plan(&cfg)
+					return huh.NewInput().
+						Title("Ban time (seconds)").
+						Description(
+							"How long a banned IP stays blocked. Longer bans punish attackers\n"+
+								"more, but also affect anyone accidentally banned. The IP is\n"+
+								"automatically unbanned after this duration.\n\n"+
+								"Default: 86400 (24 hours)  —  3600 = 1h, 604800 = 1w"+
+								formatPlan(cmds)).
+						Value(&banTimeStr).
+						Validate(func(s string) error {
+							n, err := strconv.Atoi(s)
+							if err != nil || n < 60 {
+								return fmt.Errorf("enter at least 60 seconds")
+							}
+							return nil
+						})
+				},
 				value: func() string { return banTimeStr + "s" },
 			},
 		)
@@ -413,99 +505,123 @@ func runInit(cmd *cobra.Command, args []string) error {
 			wizardStep{
 				section: "Kernel Hardening",
 				label:   "Enable",
-				field: huh.NewNote().
-					Title("Kernel Hardening").
-					Description(
-						"Apply sysctl security settings: reverse path filtering,\n"+
-							"SYN cookies, disable source routing, ASLR.").
-					Next(true).
-					NextLabel("Next"),
+				fieldFn: func() huh.Field {
+					cmds := (&modules.SysctlModule{}).Plan(&sysctlCfg)
+					return huh.NewNote().
+						Title("Kernel Hardening").
+						Description(
+							"Apply sysctl security settings: reverse path filtering,\n"+
+								"SYN cookies, disable source routing, ASLR."+
+								formatPlan(cmds)).
+						Next(true).
+						NextLabel("Next")
+				},
 				value: func() string { return "enabled" },
 			},
 		)
 	}
 
-		if contains(selectedFeatures, "apparmor") {
-			steps = append(steps,
-				wizardStep{
-					section: "AppArmor",
-					label:   "Enable",
-					field: huh.NewNote().
+	if contains(selectedFeatures, "apparmor") {
+		steps = append(steps,
+			wizardStep{
+				section: "AppArmor",
+				label:   "Enable",
+				fieldFn: func() huh.Field {
+					cmds := (&modules.AppArmorModule{}).Plan(&apparmorCfg)
+					return huh.NewNote().
 						Title("AppArmor").
 						Description(
 							"Ensure AppArmor is enabled and in enforcing mode.\n"+
-								"AppArmor provides mandatory access control for applications.").
+								"AppArmor provides mandatory access control for applications."+
+								formatPlan(cmds)).
 						Next(true).
-						NextLabel("Next"),
-					value: func() string { return "enabled" },
+						NextLabel("Next")
 				},
-			)
-		}
+				value: func() string { return "enabled" },
+			},
+		)
+	}
 
-		if contains(selectedFeatures, "shm") {
-			steps = append(steps,
-				wizardStep{
-					section: "/dev/shm Hardening",
-					label:   "Enable",
-					field: huh.NewNote().
+	if contains(selectedFeatures, "shm") {
+		steps = append(steps,
+			wizardStep{
+				section: "/dev/shm Hardening",
+				label:   "Enable",
+				fieldFn: func() huh.Field {
+					cmds := (&modules.ShmModule{}).Plan(&shmCfg)
+					return huh.NewNote().
 						Title("/dev/shm Hardening").
 						Description(
 							"Mount shared memory with noexec,nosuid,nodev to reduce\n"+
-								"risk of executable abuse in /dev/shm.").
+								"risk of executable abuse in /dev/shm."+
+								formatPlan(cmds)).
 						Next(true).
-						NextLabel("Next"),
-					value: func() string { return "enabled" },
+						NextLabel("Next")
 				},
-			)
-		}
+				value: func() string { return "enabled" },
+			},
+		)
+	}
 
-		if contains(selectedFeatures, "auditd") {
-			steps = append(steps,
-				wizardStep{
-					section: "auditd",
-					label:   "Enable",
-					field: huh.NewNote().
+	if contains(selectedFeatures, "auditd") {
+		steps = append(steps,
+			wizardStep{
+				section: "auditd",
+				label:   "Enable",
+				fieldFn: func() huh.Field {
+					cmds := (&modules.AuditdModule{}).Plan(&auditdCfg)
+					return huh.NewNote().
 						Title("auditd").
 						Description(
 							"Enable audit logging for auth and sudo events.\n"+
-								"Useful for forensics and compliance.").
+								"Useful for forensics and compliance."+
+								formatPlan(cmds)).
 						Next(true).
-						NextLabel("Next"),
-					value: func() string { return "enabled" },
+						NextLabel("Next")
 				},
-			)
-		}
+				value: func() string { return "enabled" },
+			},
+		)
+	}
 
-		if contains(selectedFeatures, "timesync") {
-			steps = append(steps,
-				wizardStep{
-					section: "Time Sync",
-					label:   "Enable",
-					field: huh.NewNote().
+	if contains(selectedFeatures, "timesync") {
+		steps = append(steps,
+			wizardStep{
+				section: "Time Sync",
+				label:   "Enable",
+				fieldFn: func() huh.Field {
+					cmds := (&modules.TimesyncModule{}).Plan(&timesyncCfg)
+					return huh.NewNote().
 						Title("Time Sync").
 						Description(
 							"Ensure system time is synchronized via systemd-timesyncd,\n"+
-								"chrony, or ntp. Important for logs and TLS.").
+								"chrony, or ntp. Important for logs and TLS."+
+								formatPlan(cmds)).
 						Next(true).
-						NextLabel("Next"),
-					value: func() string { return "enabled" },
+						NextLabel("Next")
 				},
-			)
-		}
+				value: func() string { return "enabled" },
+			},
+		)
+	}
 
-		if contains(selectedFeatures, "upgrades") {
+	if contains(selectedFeatures, "upgrades") {
 		steps = append(steps,
 			wizardStep{
 				section: "Unattended Upgrades",
 				label:   "Enable",
-				field: huh.NewNote().
-					Title("Unattended Upgrades").
-					Description(
-						"Automatic security updates will be enabled.\n\n"+
-							"The system will install security patches automatically.\n"+
-							"Reboots are not automatic — you can reboot manually when needed.").
-					Next(true).
-					NextLabel("Next"),
+				fieldFn: func() huh.Field {
+					cmds := (&modules.UpgradesModule{}).Plan(&upgCfg)
+					return huh.NewNote().
+						Title("Unattended Upgrades").
+						Description(
+							"Automatic security updates will be enabled.\n\n"+
+								"The system will install security patches automatically.\n"+
+								"Reboots are not automatic — you can reboot manually when needed."+
+								formatPlan(cmds)).
+						Next(true).
+						NextLabel("Next")
+				},
 				value: func() string { return "enabled" },
 			},
 		)
@@ -524,7 +640,11 @@ func runInit(cmd *cobra.Command, args []string) error {
 	for _, s := range steps {
 		stepNum++
 		renderHeader(stepNum, total, answered)
-		if err := runForm(s.field); err != nil {
+		field := s.field
+		if s.fieldFn != nil {
+			field = s.fieldFn()
+		}
+		if err := runForm(field); err != nil {
 			return err
 		}
 		answered = append(answered, answeredStep{section: s.section, label: s.label, val: s.value()})
@@ -536,6 +656,10 @@ func runInit(cmd *cobra.Command, args []string) error {
 				renderHeader(stepNum, total, answered)
 				var confirmRemove bool
 				userList := strings.Join(otherUsers, ", ")
+				userdelCmds := make([]string, len(otherUsers))
+				for i, u := range otherUsers {
+					userdelCmds[i] = "userdel -r " + u
+				}
 				if err := huh.NewForm(huh.NewGroup(
 					huh.NewNote().
 						Title("Other users found").
@@ -543,7 +667,8 @@ func runInit(cmd *cobra.Command, args []string) error {
 							"The following users exist on this system: " + userList + "\n\n"+
 								"Removing unused users reduces attack surface. This will delete\n"+
 								"the users and their home directories. Ensure no one is logged in\n"+
-								"as these users before proceeding."),
+								"as these users before proceeding."+
+								formatPlan(userdelCmds)),
 					huh.NewConfirm().
 						Title("Remove these users?").
 						Value(&confirmRemove).

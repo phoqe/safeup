@@ -31,6 +31,14 @@ func (m *TimesyncModule) Apply(cfg *system.TimesyncConfig) error {
 	return tryService("systemd-timesyncd")
 }
 
+func (m *TimesyncModule) Plan(cfg *system.TimesyncConfig) []string {
+	var cmds []string
+	cmds = append(cmds, "apt-get install -y systemd-timesyncd")
+	cmds = append(cmds, "systemctl enable systemd-timesyncd")
+	cmds = append(cmds, "systemctl start systemd-timesyncd")
+	return cmds
+}
+
 func (m *TimesyncModule) Verify(cfg *system.TimesyncConfig) *VerifyResult {
 	result := &VerifyResult{ModuleName: m.Name()}
 

@@ -95,6 +95,23 @@ func installAuthorizedKey(pubKey string) error {
 	return err
 }
 
+func (m *SSHModule) Plan(cfg *system.SSHConfig) []string {
+	var cmds []string
+	cmds = append(cmds, "cp /etc/ssh/sshd_config /etc/ssh/sshd_config.bak.*")
+	opts := "PermitRootLogin no, PasswordAuthentication no, MaxAuthTries 3, LoginGraceTime 60, X11Forwarding no, AllowTcpForwarding no"
+	if cfg.AuthorizedKeyUser != "" {
+		opts += ", AllowUsers " + cfg.AuthorizedKeyUser
+	}
+	cmds = append(cmds, "write /etc/ssh/sshd_config ("+opts+")")
+	if cfg.AuthorizedKey != "" && cfg.AuthorizedKeyUser == "" {
+		cmds = append(cmds, "mkdir -p /root/.ssh")
+		cmds = append(cmds, "append to /root/.ssh/authorized_keys")
+	}
+	cmds = append(cmds, "sshd -t")
+	cmds = append(cmds, "systemctl restart ssh")
+	return cmds
+}
+
 func (m *SSHModule) Verify(cfg *system.SSHConfig) *VerifyResult {
 	result := &VerifyResult{ModuleName: m.Name()}
 

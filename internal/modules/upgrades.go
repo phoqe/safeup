@@ -32,6 +32,13 @@ APT::Periodic::Unattended-Upgrade "1";
 	return nil
 }
 
+func (m *UpgradesModule) Plan(cfg *system.UpgradesConfig) []string {
+	var cmds []string
+	cmds = append(cmds, "apt-get install -y unattended-upgrades")
+	cmds = append(cmds, "write /etc/apt/apt.conf.d/20auto-upgrades")
+	return cmds
+}
+
 func (m *UpgradesModule) Verify(cfg *system.UpgradesConfig) *VerifyResult {
 	result := &VerifyResult{ModuleName: m.Name()}
 

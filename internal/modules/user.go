@@ -64,6 +64,28 @@ type UserModule struct{}
 func (m *UserModule) Name() string        { return "Create User" }
 func (m *UserModule) Description() string { return "Create non-root user with sudo and SSH key" }
 
+func (m *UserModule) Plan(cfg *system.UserConfig) []string {
+	if cfg == nil || cfg.Username == "" {
+		return nil
+	}
+	var cmds []string
+	cmds = append(cmds, "useradd -m -s /bin/bash "+cfg.Username)
+	cmds = append(cmds, "usermod -aG sudo "+cfg.Username)
+	if cfg.AuthorizedKey != "" {
+		cmds = append(cmds, "mkdir -p /home/"+cfg.Username+"/.ssh")
+		cmds = append(cmds, "append to /home/"+cfg.Username+"/.ssh/authorized_keys")
+		cmds = append(cmds, "chown -R "+cfg.Username+":"+cfg.Username+" /home/"+cfg.Username+"/.ssh")
+	}
+	if cfg.Password != "" {
+		cmds = append(cmds, "chpasswd (set password for "+cfg.Username+")")
+	}
+	if cfg.PasswordlessSudo {
+		cmds = append(cmds, "write /etc/sudoers.d/safeup-"+cfg.Username+" '"+cfg.Username+" ALL=(ALL) NOPASSWD:ALL'")
+		cmds = append(cmds, "visudo -c -f /etc/sudoers.d/safeup-"+cfg.Username)
+	}
+	return cmds
+}
+
 func (m *UserModule) Verify(cfg *system.UserConfig) *VerifyResult {
 	result := &VerifyResult{ModuleName: m.Name()}
 	if cfg == nil || cfg.Username == "" {

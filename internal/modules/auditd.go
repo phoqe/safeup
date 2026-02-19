@@ -45,6 +45,15 @@ func (m *AuditdModule) Apply(cfg *system.AuditdConfig) error {
 	return system.ServiceAction("auditd", "enable")
 }
 
+func (m *AuditdModule) Plan(cfg *system.AuditdConfig) []string {
+	var cmds []string
+	cmds = append(cmds, "apt-get install -y auditd")
+	cmds = append(cmds, "write /etc/audit/rules.d/safeup.rules")
+	cmds = append(cmds, "systemctl restart auditd")
+	cmds = append(cmds, "systemctl enable auditd")
+	return cmds
+}
+
 func (m *AuditdModule) Verify(cfg *system.AuditdConfig) *VerifyResult {
 	result := &VerifyResult{ModuleName: m.Name()}
 

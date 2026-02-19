@@ -46,6 +46,13 @@ func (m *SysctlModule) Apply(cfg *system.SysctlConfig) error {
 	return nil
 }
 
+func (m *SysctlModule) Plan(cfg *system.SysctlConfig) []string {
+	var cmds []string
+	cmds = append(cmds, "write /etc/sysctl.d/99-safeup.conf")
+	cmds = append(cmds, "sysctl --system")
+	return cmds
+}
+
 func (m *SysctlModule) Verify(cfg *system.SysctlConfig) *VerifyResult {
 	result := &VerifyResult{ModuleName: m.Name()}
 
