@@ -3,6 +3,7 @@ package modules
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 
@@ -10,6 +11,7 @@ import (
 )
 
 const sshdConfigPath = "/etc/ssh/sshd_config"
+const sshdDropInDir = "/etc/ssh/sshd_config.d"
 
 type SSHModule struct{}
 
@@ -52,6 +54,26 @@ func (m *SSHModule) Apply(cfg *system.SSHConfig) error {
 
 	if err := os.WriteFile(sshdConfigPath, []byte(content), 0644); err != nil {
 		return fmt.Errorf("cannot write sshd_config: %w", err)
+	}
+
+	enforced := map[string]string{
+		"MaxAuthTries":         "3",
+		"LoginGraceTime":       "60",
+		"X11Forwarding":        "no",
+		"AllowTcpForwarding":   "no",
+		"AllowAgentForwarding": "no",
+		"PermitEmptyPasswords": "no",
+		"ClientAliveInterval":  "300",
+		"ClientAliveCountMax":  "2",
+	}
+	if cfg.DisableRootLogin {
+		enforced["PermitRootLogin"] = "no"
+	}
+	if cfg.DisablePasswordAuth {
+		enforced["PasswordAuthentication"] = "no"
+	}
+	if err := neutralizeSSHDropIns(enforced); err != nil {
+		return fmt.Errorf("failed to fix SSH drop-in overrides: %w", err)
 	}
 
 	if cfg.AuthorizedKey != "" && cfg.AuthorizedKeyUser == "" {
@@ -107,6 +129,7 @@ func (m *SSHModule) Plan(cfg *system.SSHConfig) []string {
 		opts += ", AllowUsers " + cfg.AuthorizedKeyUser
 	}
 	cmds = append(cmds, "write /etc/ssh/sshd_config ("+opts+")")
+	cmds = append(cmds, "fix conflicting drop-ins in /etc/ssh/sshd_config.d/")
 	if cfg.AuthorizedKey != "" && cfg.AuthorizedKeyUser == "" {
 		cmds = append(cmds, "mkdir -p /root/.ssh")
 		cmds = append(cmds, "append to /root/.ssh/authorized_keys")
@@ -238,7 +261,101 @@ func (m *SSHModule) Verify(cfg *system.SSHConfig) *VerifyResult {
 		})
 	}
 
+	dropInChecks := map[string]string{
+		"MaxAuthTries":         "3",
+		"LoginGraceTime":       "60",
+		"X11Forwarding":        "no",
+		"AllowTcpForwarding":   "no",
+		"AllowAgentForwarding": "no",
+		"PermitEmptyPasswords": "no",
+		"ClientAliveInterval":  "300",
+		"ClientAliveCountMax":  "2",
+	}
+	if cfg.DisableRootLogin {
+		dropInChecks["PermitRootLogin"] = "no"
+	}
+	if cfg.DisablePasswordAuth {
+		dropInChecks["PasswordAuthentication"] = "no"
+	}
+	checkDropInConflicts(result, dropInChecks)
+
 	return result
+}
+
+func neutralizeSSHDropIns(enforced map[string]string) error {
+	entries, err := os.ReadDir(sshdDropInDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return fmt.Errorf("cannot read %s: %w", sshdDropInDir, err)
+	}
+
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".conf") {
+			continue
+		}
+
+		path := filepath.Join(sshdDropInDir, entry.Name())
+		data, err := os.ReadFile(path)
+		if err != nil {
+			continue
+		}
+
+		content := string(data)
+		modified := false
+		for key, value := range enforced {
+			current := getSshdOption(content, key)
+			if current != "" && !strings.EqualFold(current, value) {
+				re := regexp.MustCompile(`(?m)^` + key + `\s+.*$`)
+				content = re.ReplaceAllString(content, key+" "+value)
+				modified = true
+			}
+		}
+
+		if modified {
+			if _, err := system.BackupFile(path); err != nil {
+				return fmt.Errorf("backup %s failed: %w", path, err)
+			}
+			if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+				return fmt.Errorf("cannot write %s: %w", path, err)
+			}
+		}
+	}
+
+	return nil
+}
+
+func checkDropInConflicts(result *VerifyResult, expected map[string]string) {
+	entries, err := os.ReadDir(sshdDropInDir)
+	if err != nil {
+		return
+	}
+
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".conf") {
+			continue
+		}
+
+		path := filepath.Join(sshdDropInDir, entry.Name())
+		data, err := os.ReadFile(path)
+		if err != nil {
+			continue
+		}
+
+		content := string(data)
+		for key, value := range expected {
+			actual := getSshdOption(content, key)
+			if actual != "" && !strings.EqualFold(actual, value) {
+				result.Checks = append(result.Checks, Check{
+					Name:     entry.Name() + " overrides " + key,
+					Status:   StatusFail,
+					Expected: value,
+					Actual:   actual,
+				})
+			}
+		}
+	}
 }
 
 func setSshdOption(content, key, value string) string {

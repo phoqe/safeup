@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -221,6 +222,33 @@ func auditSSH() []auditCheck {
 			checks = append(checks, auditCheck{cat, "ClientAliveCountMax " + clientAliveMax, auditPass, ""})
 		} else if err == nil {
 			checks = append(checks, auditCheck{cat, "ClientAliveCountMax", auditWarn, "set to " + clientAliveMax + " (consider 3 or lower)"})
+		}
+	}
+
+	dangerousDefaults := map[string]string{
+		"PermitRootLogin":        "yes",
+		"PasswordAuthentication": "yes",
+		"PermitEmptyPasswords":   "yes",
+	}
+	dropInDir := "/etc/ssh/sshd_config.d"
+	entries, readErr := os.ReadDir(dropInDir)
+	if readErr == nil {
+		for _, entry := range entries {
+			if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".conf") {
+				continue
+			}
+			data, readErr := os.ReadFile(filepath.Join(dropInDir, entry.Name()))
+			if readErr != nil {
+				continue
+			}
+			dropInContent := string(data)
+			for key, bad := range dangerousDefaults {
+				val := getSSHValue(dropInContent, key)
+				if strings.EqualFold(val, bad) {
+					checks = append(checks, auditCheck{cat, entry.Name() + " overrides " + key, auditFail,
+						"set to " + val + " (drop-in overrides sshd_config)"})
+				}
+			}
 		}
 	}
 
