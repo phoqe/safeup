@@ -153,6 +153,16 @@ func runInit(cmd *cobra.Command, args []string) error {
 	err = huh.NewForm(
 		huh.NewGroup(
 			huh.NewNote().
+				Title("How SafeUp works").
+				Description(
+					"Settings are not applied as you go. You configure everything first,\n"+
+						"then all changes are applied at the end when you confirm.\n\n"+
+						"Press Enter to continue.").
+				Next(true).
+				NextLabel("Enter"),
+		),
+		huh.NewGroup(
+			huh.NewNote().
 				Title("Welcome to SafeUp").
 				Description(
 					"This wizard will harden your Ubuntu server step by step.\n\n"+
@@ -161,6 +171,29 @@ func runInit(cmd *cobra.Command, args []string) error {
 				Next(true).
 				NextLabel("Get started →"),
 		),
+		huh.NewGroup(
+			huh.NewNote().
+				Title("Update package lists").
+				Description(
+					"Press Enter to run apt-get update. This refreshes the package index\n"+
+						"before installing any hardening components.").
+				Next(true).
+				NextLabel("Enter"),
+		),
+	).WithTheme(wizardTheme()).Run()
+	if err != nil {
+		return err
+	}
+
+	if !DryRun {
+		if err = system.AptUpdate(); err != nil {
+			return fmt.Errorf("apt update failed: %w", err)
+		}
+	}
+
+	renderHeader(0, 0, nil)
+
+	err = huh.NewForm(
 		huh.NewGroup(
 			huh.NewMultiSelect[string]().
 				Title("Select hardening features").
@@ -761,6 +794,10 @@ func runInit(cmd *cobra.Command, args []string) error {
 
 	f2bCfg.MaxRetry, _ = strconv.Atoi(maxRetryStr)
 	f2bCfg.BanTime, _ = strconv.Atoi(banTimeStr)
+	if contains(selectedFeatures, "ssh") {
+		f2bCfg.SSHPort = sshCfg.Port
+		ufwCfg.SSHPort = sshCfg.Port
+	}
 
 	if contains(selectedFeatures, "ufw") && sshCfg.Port != "22" {
 		hasSSHPort := false

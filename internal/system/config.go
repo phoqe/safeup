@@ -41,11 +41,13 @@ type SSHConfig struct {
 type UFWConfig struct {
 	AllowedPorts []string `json:"allowed_ports" yaml:"allowed_ports"`
 	RateLimitSSH bool     `json:"rate_limit_ssh" yaml:"rate_limit_ssh"`
+	SSHPort      string   `json:"ssh_port,omitempty" yaml:"ssh_port,omitempty"`
 }
 
 type Fail2BanConfig struct {
-	MaxRetry int `json:"max_retry" yaml:"max_retry"`
-	BanTime  int `json:"ban_time" yaml:"ban_time"`
+	MaxRetry int    `json:"max_retry" yaml:"max_retry"`
+	BanTime  int    `json:"ban_time" yaml:"ban_time"`
+	SSHPort  string `json:"ssh_port,omitempty" yaml:"ssh_port,omitempty"`
 }
 
 type UpgradesConfig struct{}

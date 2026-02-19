@@ -23,15 +23,19 @@ func (m *Fail2BanModule) Apply(cfg *system.Fail2BanConfig) error {
 		}
 	}
 
+	port := "ssh"
+	if cfg.SSHPort != "" && cfg.SSHPort != "22" {
+		port = cfg.SSHPort
+	}
 	jailConfig := fmt.Sprintf(`[sshd]
 enabled = true
-port = ssh
+port = %s
 filter = sshd
-logpath = /var/log/auth.log
+backend = systemd
 maxretry = %d
 bantime = %d
 findtime = 600
-`, cfg.MaxRetry, cfg.BanTime)
+`, port, cfg.MaxRetry, cfg.BanTime)
 
 	if _, err := system.BackupFile(jailLocalPath); err != nil {
 		return fmt.Errorf("backup failed: %w", err)
@@ -52,7 +56,11 @@ func (m *Fail2BanModule) Plan(cfg *system.Fail2BanConfig) []string {
 	var cmds []string
 	cmds = append(cmds, "apt-get install -y fail2ban")
 	cmds = append(cmds, "cp /etc/fail2ban/jail.local /etc/fail2ban/jail.local.bak.*")
-	cmds = append(cmds, "write /etc/fail2ban/jail.local (maxretry="+strconv.Itoa(cfg.MaxRetry)+", bantime="+strconv.Itoa(cfg.BanTime)+")")
+	port := "ssh"
+	if cfg.SSHPort != "" && cfg.SSHPort != "22" {
+		port = cfg.SSHPort
+	}
+	cmds = append(cmds, "write /etc/fail2ban/jail.local (port="+port+", maxretry="+strconv.Itoa(cfg.MaxRetry)+", bantime="+strconv.Itoa(cfg.BanTime)+")")
 	cmds = append(cmds, "systemctl enable fail2ban")
 	cmds = append(cmds, "systemctl restart fail2ban")
 	return cmds

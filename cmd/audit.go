@@ -3,11 +3,13 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/spf13/cobra"
 
+	"github.com/phoqe/safeup/internal/modules"
 	"github.com/phoqe/safeup/internal/system"
 )
 
@@ -163,10 +165,15 @@ func auditSSH() []auditCheck {
 	maxAuth := getSSHValue(content, "MaxAuthTries")
 	if maxAuth == "" {
 		checks = append(checks, auditCheck{cat, "MaxAuthTries", auditWarn, "not set (defaults to 6)"})
-	} else if maxAuth <= "3" {
-		checks = append(checks, auditCheck{cat, "MaxAuthTries " + maxAuth, auditPass, ""})
 	} else {
-		checks = append(checks, auditCheck{cat, "MaxAuthTries", auditWarn, "set to " + maxAuth + " (consider 3 or lower)"})
+		n, err := strconv.Atoi(maxAuth)
+		if err != nil {
+			checks = append(checks, auditCheck{cat, "MaxAuthTries", auditWarn, "invalid value " + maxAuth})
+		} else if n <= 3 {
+			checks = append(checks, auditCheck{cat, "MaxAuthTries " + maxAuth, auditPass, ""})
+		} else {
+			checks = append(checks, auditCheck{cat, "MaxAuthTries", auditWarn, "set to " + maxAuth + " (consider 3 or lower)"})
+		}
 	}
 
 	x11 := getSSHValue(content, "X11Forwarding")
@@ -181,6 +188,40 @@ func auditSSH() []auditCheck {
 		checks = append(checks, auditCheck{cat, "AllowTcpForwarding disabled", auditPass, ""})
 	} else if tcpFwd != "" {
 		checks = append(checks, auditCheck{cat, "AllowTcpForwarding", auditWarn, "set to " + tcpFwd + " (consider no)"})
+	}
+
+	agentFwd := getSSHValue(content, "AllowAgentForwarding")
+	if strings.EqualFold(agentFwd, "no") {
+		checks = append(checks, auditCheck{cat, "AllowAgentForwarding disabled", auditPass, ""})
+	} else if agentFwd != "" {
+		checks = append(checks, auditCheck{cat, "AllowAgentForwarding", auditWarn, "set to " + agentFwd + " (consider no)"})
+	}
+
+	emptyPass := getSSHValue(content, "PermitEmptyPasswords")
+	if strings.EqualFold(emptyPass, "no") {
+		checks = append(checks, auditCheck{cat, "PermitEmptyPasswords disabled", auditPass, ""})
+	} else if emptyPass != "" {
+		checks = append(checks, auditCheck{cat, "PermitEmptyPasswords", auditFail, "set to " + emptyPass})
+	}
+
+	clientAlive := getSSHValue(content, "ClientAliveInterval")
+	if clientAlive != "" {
+		n, err := strconv.Atoi(clientAlive)
+		if err == nil && n > 0 && n <= 300 {
+			checks = append(checks, auditCheck{cat, "ClientAliveInterval " + clientAlive, auditPass, ""})
+		} else if err == nil {
+			checks = append(checks, auditCheck{cat, "ClientAliveInterval", auditWarn, "set to " + clientAlive + " (consider 300 or lower)"})
+		}
+	}
+
+	clientAliveMax := getSSHValue(content, "ClientAliveCountMax")
+	if clientAliveMax != "" {
+		n, err := strconv.Atoi(clientAliveMax)
+		if err == nil && n <= 3 {
+			checks = append(checks, auditCheck{cat, "ClientAliveCountMax " + clientAliveMax, auditPass, ""})
+		} else if err == nil {
+			checks = append(checks, auditCheck{cat, "ClientAliveCountMax", auditWarn, "set to " + clientAliveMax + " (consider 3 or lower)"})
+		}
 	}
 
 	return checks
@@ -277,35 +318,19 @@ func auditSysctl() []auditCheck {
 	var checks []auditCheck
 	cat := "Kernel Hardening"
 
-	sysctlSettings := []struct{ key, value string }{
-		{"net.ipv4.conf.all.rp_filter", "1"},
-		{"net.ipv4.tcp_syncookies", "1"},
-		{"net.ipv4.conf.all.accept_source_route", "0"},
-		{"net.ipv4.conf.default.accept_source_route", "0"},
-		{"net.ipv4.icmp_echo_ignore_broadcasts", "1"},
-		{"kernel.randomize_va_space", "2"},
-	}
-
-	_, err := os.Stat("/etc/sysctl.d/99-safeup.conf")
-	if err != nil {
-		checks = append(checks, auditCheck{cat, "sysctl config", auditWarn, "99-safeup.conf not found"})
-		return checks
-	}
-
-	for _, s := range sysctlSettings {
-		result, err := system.Run("sysctl", "-n", s.key)
+	for _, s := range modules.GetSysctlSettings() {
+		result, err := system.Run("sysctl", "-n", s.Key)
 		if err != nil || result.ExitCode != 0 {
-			checks = append(checks, auditCheck{cat, s.key, auditWarn, "cannot read"})
+			checks = append(checks, auditCheck{cat, s.Key, auditWarn, "cannot read"})
 			continue
 		}
 		actual := strings.TrimSpace(result.Stdout)
-		if actual == s.value {
-			checks = append(checks, auditCheck{cat, s.key + " = " + s.value, auditPass, ""})
+		if actual == s.Value {
+			checks = append(checks, auditCheck{cat, s.Key + " = " + s.Value, auditPass, ""})
 		} else {
-			checks = append(checks, auditCheck{cat, s.key, auditFail, "expected " + s.value + ", got " + actual})
+			checks = append(checks, auditCheck{cat, s.Key, auditFail, "expected " + s.Value + ", got " + actual})
 		}
 	}
-
 	return checks
 }
 
@@ -434,7 +459,7 @@ func auditUsers() []auditCheck {
 		}
 		user := parts[0]
 		hash := parts[1]
-		if hash == "" || hash == "!" || hash == "*" || hash == "!!" {
+		if hash == "!" || hash == "*" || hash == "!!" {
 			continue
 		}
 		if hash == "" {

@@ -30,11 +30,8 @@ func (m *UFWModule) Apply(cfg *system.UFWConfig) error {
 
 	if cfg.RateLimitSSH {
 		sshPort := "22"
-		for _, p := range cfg.AllowedPorts {
-			if strings.HasSuffix(p, "/tcp") && (strings.HasPrefix(p, "22") || !strings.Contains(p, "80") && !strings.Contains(p, "443")) {
-				sshPort = strings.TrimSuffix(p, "/tcp")
-				break
-			}
+		if cfg.SSHPort != "" {
+			sshPort = cfg.SSHPort
 		}
 		commands = append(commands, fmt.Sprintf("ufw limit %s/tcp", sshPort))
 	}
@@ -64,11 +61,8 @@ func (m *UFWModule) Plan(cfg *system.UFWConfig) []string {
 	}
 	if cfg.RateLimitSSH {
 		sshPort := "22"
-		for _, p := range cfg.AllowedPorts {
-			if strings.HasSuffix(p, "/tcp") && (strings.HasPrefix(p, "22") || !strings.Contains(p, "80") && !strings.Contains(p, "443")) {
-				sshPort = strings.TrimSuffix(p, "/tcp")
-				break
-			}
+		if cfg.SSHPort != "" {
+			sshPort = cfg.SSHPort
 		}
 		cmds = append(cmds, "ufw limit "+sshPort+"/tcp")
 	}

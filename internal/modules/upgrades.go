@@ -9,6 +9,7 @@ import (
 )
 
 const autoUpgradesPath = "/etc/apt/apt.conf.d/20auto-upgrades"
+const unattendedRebootPath = "/etc/apt/apt.conf.d/99-safeup-unattended-reboot"
 
 type UpgradesModule struct{}
 
@@ -29,6 +30,13 @@ APT::Periodic::Unattended-Upgrade "1";
 		return fmt.Errorf("cannot write auto-upgrades config: %w", err)
 	}
 
+	rebootContent := `Unattended-Upgrade::Automatic-Reboot "true";
+Unattended-Upgrade::Automatic-Reboot-Time "04:00";
+`
+	if err := os.WriteFile(unattendedRebootPath, []byte(rebootContent), 0644); err != nil {
+		return fmt.Errorf("cannot write unattended-reboot config: %w", err)
+	}
+
 	return nil
 }
 
@@ -36,6 +44,7 @@ func (m *UpgradesModule) Plan(cfg *system.UpgradesConfig) []string {
 	var cmds []string
 	cmds = append(cmds, "apt-get install -y unattended-upgrades")
 	cmds = append(cmds, "write /etc/apt/apt.conf.d/20auto-upgrades")
+	cmds = append(cmds, "write /etc/apt/apt.conf.d/99-safeup-unattended-reboot (Automatic-Reboot at 04:00)")
 	return cmds
 }
 
@@ -59,6 +68,15 @@ func (m *UpgradesModule) Verify(cfg *system.UpgradesConfig) *VerifyResult {
 		Status:   boolCheck(enabled),
 		Expected: "enabled",
 		Actual:   ternary(enabled, "enabled", "disabled"),
+	})
+
+	rebootData, err := os.ReadFile(unattendedRebootPath)
+	rebootConfigured := err == nil && strings.Contains(string(rebootData), "Automatic-Reboot")
+	result.Checks = append(result.Checks, Check{
+		Name:     "automatic reboot",
+		Status:   boolCheck(rebootConfigured),
+		Expected: "configured",
+		Actual:   ternary(rebootConfigured, "configured", "not configured"),
 	})
 
 	return result

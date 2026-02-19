@@ -42,6 +42,10 @@ func (m *SSHModule) Apply(cfg *system.SSHConfig) error {
 	content = setSshdOption(content, "LoginGraceTime", "60")
 	content = setSshdOption(content, "X11Forwarding", "no")
 	content = setSshdOption(content, "AllowTcpForwarding", "no")
+	content = setSshdOption(content, "AllowAgentForwarding", "no")
+	content = setSshdOption(content, "PermitEmptyPasswords", "no")
+	content = setSshdOption(content, "ClientAliveInterval", "300")
+	content = setSshdOption(content, "ClientAliveCountMax", "2")
 	if cfg.AuthorizedKeyUser != "" {
 		content = setSshdOption(content, "AllowUsers", cfg.AuthorizedKeyUser)
 	}
@@ -98,7 +102,7 @@ func installAuthorizedKey(pubKey string) error {
 func (m *SSHModule) Plan(cfg *system.SSHConfig) []string {
 	var cmds []string
 	cmds = append(cmds, "cp /etc/ssh/sshd_config /etc/ssh/sshd_config.bak.*")
-	opts := "PermitRootLogin no, PasswordAuthentication no, MaxAuthTries 3, LoginGraceTime 60, X11Forwarding no, AllowTcpForwarding no"
+	opts := "PermitRootLogin no, PasswordAuthentication no, MaxAuthTries 3, LoginGraceTime 60, X11Forwarding no, AllowTcpForwarding no, AllowAgentForwarding no, PermitEmptyPasswords no, ClientAliveInterval 300, ClientAliveCountMax 2"
 	if cfg.AuthorizedKeyUser != "" {
 		opts += ", AllowUsers " + cfg.AuthorizedKeyUser
 	}
@@ -182,6 +186,38 @@ func (m *SSHModule) Verify(cfg *system.SSHConfig) *VerifyResult {
 		Status:   boolCheck(strings.EqualFold(tcpFwd, "no")),
 		Expected: "no",
 		Actual:   tcpFwd,
+	})
+
+	agentFwd := getSshdOption(content, "AllowAgentForwarding")
+	result.Checks = append(result.Checks, Check{
+		Name:     "AllowAgentForwarding",
+		Status:   boolCheck(strings.EqualFold(agentFwd, "no")),
+		Expected: "no",
+		Actual:   agentFwd,
+	})
+
+	emptyPass := getSshdOption(content, "PermitEmptyPasswords")
+	result.Checks = append(result.Checks, Check{
+		Name:     "PermitEmptyPasswords",
+		Status:   boolCheck(strings.EqualFold(emptyPass, "no")),
+		Expected: "no",
+		Actual:   emptyPass,
+	})
+
+	clientAlive := getSshdOption(content, "ClientAliveInterval")
+	result.Checks = append(result.Checks, Check{
+		Name:     "ClientAliveInterval",
+		Status:   boolCheck(clientAlive == "300"),
+		Expected: "300",
+		Actual:   clientAlive,
+	})
+
+	clientAliveMax := getSshdOption(content, "ClientAliveCountMax")
+	result.Checks = append(result.Checks, Check{
+		Name:     "ClientAliveCountMax",
+		Status:   boolCheck(clientAliveMax == "2"),
+		Expected: "2",
+		Actual:   clientAliveMax,
 	})
 
 	if cfg.AuthorizedKeyUser != "" {

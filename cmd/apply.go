@@ -162,6 +162,15 @@ func runApply(cmd *cobra.Command, args []string) error {
 		}
 	}
 
+	if cfg.SSH != nil {
+		if cfg.Fail2Ban != nil && cfg.Fail2Ban.SSHPort == "" {
+			cfg.Fail2Ban.SSHPort = cfg.SSH.Port
+		}
+		if cfg.UFW != nil && cfg.UFW.SSHPort == "" {
+			cfg.UFW.SSHPort = cfg.SSH.Port
+		}
+	}
+
 	if DryRun {
 		printPlan(&cfg)
 		return nil
