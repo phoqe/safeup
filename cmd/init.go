@@ -105,9 +105,6 @@ func runInit(cmd *cobra.Command, args []string) error {
 		if err != nil {
 			return err
 		}
-		if err = system.AptUpdate(); err != nil {
-			return fmt.Errorf("apt update failed: %w", err)
-		}
 	}
 
 	var selectedFeatures []string
@@ -293,12 +290,20 @@ func runInit(cmd *cobra.Command, args []string) error {
 						Title("Password for sudo").
 						Description(
 							"Sudo will require this password. This prevents instant root access\n"+
-								"if the SSH key is ever compromised.\n\n"+
-								"Leave empty to set later with 'sudo passwd " + userName + "'.").
+								"if the SSH key is ever compromised.").
 						Value(&userPassword).
-						Password(true)
+						Password(true).
+						Validate(func(s string) error {
+							if strings.TrimSpace(s) == "" {
+								return fmt.Errorf("password is required for sudo")
+							}
+							if len(s) < 8 {
+								return fmt.Errorf("password must be at least 8 characters")
+							}
+							return nil
+						})
 				},
-				value: func() string { return ternaryStr(userPassword != "", "••••••••", "set later") },
+				value: func() string { return "••••••••" },
 			},
 		)
 	}
@@ -816,20 +821,9 @@ func runInit(cmd *cobra.Command, args []string) error {
 			fmt.Printf("  %s %s (skipped)\n", checkStyle.Render("✓"), f)
 		}
 	} else {
-		var aptUpdateErr error
-		_ = spinner.New().
-			Title("Updating package lists...").
-			Action(func() {
-				aptUpdateErr = system.AptUpdate()
-			}).
-			Run()
-		if aptUpdateErr != nil {
-			fmt.Fprintf(os.Stderr, "  ✗ apt-get update: %v\n", aptUpdateErr)
-		} else {
-			fmt.Printf("  %s Package lists updated\n", checkStyle.Render("✓"))
-		}
-
 		applyFn := func() {
+			results = append(results, applyResult{"Update package lists", system.AptUpdate()})
+
 			if contains(selectedFeatures, "user") && userCfg.Username != "" {
 				if removeOtherUsers && len(otherUsers) > 0 {
 					err := modules.RemoveOtherUsers(otherUsers)
@@ -873,6 +867,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 			if contains(selectedFeatures, "upgrades") {
 				m := &modules.UpgradesModule{}
 				results = append(results, applyResult{m.Name(), m.Apply(&upgCfg)})
+				results = append(results, applyResult{"Upgrade packages", system.AptUpgrade()})
 			}
 		}
 
@@ -880,17 +875,6 @@ func runInit(cmd *cobra.Command, args []string) error {
 			Title("Applying hardening configuration...").
 			Action(applyFn).
 			Run()
-
-		if contains(selectedFeatures, "upgrades") {
-			var upgradeErr error
-			_ = spinner.New().
-				Title("Upgrading installed packages...").
-				Action(func() {
-					upgradeErr = system.AptUpgrade()
-				}).
-				Run()
-			results = append(results, applyResult{"Upgrade packages", upgradeErr})
-		}
 
 		savedCfg := &system.SavedConfig{}
 		if contains(selectedFeatures, "user") && userCfg.Username != "" {
