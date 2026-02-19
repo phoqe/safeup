@@ -153,16 +153,6 @@ func runInit(cmd *cobra.Command, args []string) error {
 	err = huh.NewForm(
 		huh.NewGroup(
 			huh.NewNote().
-				Title("How SafeUp works").
-				Description(
-					"Settings are not applied as you go. You configure everything first,\n"+
-						"then all changes are applied at the end when you confirm.\n\n"+
-						"Press Enter to continue.").
-				Next(true).
-				NextLabel("Enter"),
-		),
-		huh.NewGroup(
-			huh.NewNote().
 				Title("Welcome to SafeUp").
 				Description(
 					"This wizard will harden your Ubuntu server step by step.\n\n"+
