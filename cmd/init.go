@@ -933,16 +933,18 @@ func runInit(cmd *cobra.Command, args []string) error {
 
 	if contains(selectedFeatures, "ssh") {
 		fmt.Println()
-		fmt.Println(warnStyle.Render("  ⚠  Test SSH access in a new terminal before closing this session!"))
+		fmt.Println(warnStyle.Render("  ⚠  Next steps:"))
 		loginUser := "root"
 		if contains(selectedFeatures, "user") && userCfg.Username != "" {
 			loginUser = userCfg.Username
 		}
+		fmt.Println(dimStyle.Render("  1. In a new terminal, try to login with your user:"))
 		if sshCfg.Port != "22" {
 			fmt.Printf(dimStyle.Render("     ssh -p %s %s@host\n"), sshCfg.Port, loginUser)
 		} else {
 			fmt.Printf(dimStyle.Render("     ssh %s@host\n"), loginUser)
 		}
+		fmt.Println(dimStyle.Render("  2. If login works, reboot the server."))
 	}
 
 	fmt.Println()

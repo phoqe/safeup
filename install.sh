@@ -42,8 +42,12 @@ main() {
     chmod +x "${INSTALL_DIR}/${BINARY}"
     echo "Installed safeup to ${INSTALL_DIR}/${BINARY}"
     echo ""
-
-    exec "${INSTALL_DIR}/${BINARY}" init
+    echo "Get started:"
+    echo "  safeup init    - Interactively harden this server"
+    echo "  safeup apply   - Apply config from file (safeup apply -c config.yaml)"
+    echo "  safeup verify  - Check hardening against saved config"
+    echo "  safeup audit   - Scan for security concerns (no config required)"
+    echo ""
 }
 
 main

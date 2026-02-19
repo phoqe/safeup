@@ -8,7 +8,7 @@ Interactive VPS hardening for Ubuntu. Run once on a fresh server to lock it down
 curl -fsSL https://raw.githubusercontent.com/phoqe/safeup/master/install.sh | sudo bash
 ```
 
-Requires root and Linux (amd64 or arm64). The installer downloads the binary and runs `safeup init`.
+Requires root and Linux (amd64 or arm64). The installer downloads the binary to `/usr/local/bin/safeup`.
 
 ## Commands
 
