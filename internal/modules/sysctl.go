@@ -8,7 +8,7 @@ import (
 	"github.com/phoqe/safeup/internal/system"
 )
 
-const sysctlPath = "/etc/sysctl.d/99-safeup.conf"
+const sysctlPath = "/etc/sysctl.d/zzz-safeup.conf"
 
 type SysctlSetting struct{ Key, Value string }
 
@@ -45,9 +45,11 @@ func (m *SysctlModule) Name() string        { return "Kernel Hardening" }
 func (m *SysctlModule) Description() string { return "Apply sysctl security settings" }
 
 func (m *SysctlModule) Apply(cfg *system.SysctlConfig) error {
+	_ = os.Remove("/etc/sysctl.d/99-safeup.conf")
+
 	var lines []string
 	for _, s := range SysctlSettings {
-		lines = append(lines, fmt.Sprintf("%s = %s", s.Key, s.Value))
+		lines = append(lines, fmt.Sprintf("%s=%s", s.Key, s.Value))
 	}
 
 	content := strings.Join(lines, "\n") + "\n"
@@ -68,7 +70,7 @@ func (m *SysctlModule) Apply(cfg *system.SysctlConfig) error {
 
 func (m *SysctlModule) Plan(cfg *system.SysctlConfig) []string {
 	var cmds []string
-	cmds = append(cmds, "write /etc/sysctl.d/99-safeup.conf")
+	cmds = append(cmds, "write /etc/sysctl.d/zzz-safeup.conf")
 	cmds = append(cmds, "sysctl --system")
 	return cmds
 }
