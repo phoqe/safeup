@@ -115,21 +115,31 @@ func runInit(cmd *cobra.Command, args []string) error {
 			huh.NewGroup(
 				huh.NewConfirm().
 					Title("Disable root login via SSH?").
-					Description("Recommended. You should use a regular user with sudo instead.").
-					Inline(true).
+					Description(
+						"The root account has full system access and is the most targeted by\n"+
+							"automated attacks. Disabling root login forces you to use a regular\n"+
+							"user with sudo, which adds an extra layer of protection.\n\n"+
+							"Default: Yes (strongly recommended)").
 					Value(&sshCfg.DisableRootLogin),
 			),
 			huh.NewGroup(
 				huh.NewConfirm().
 					Title("Disable password authentication?").
-					Description("Recommended. Use SSH keys instead.").
-					Inline(true).
+					Description(
+						"Password-based SSH is vulnerable to brute-force attacks. SSH keys\n"+
+							"use cryptographic authentication that is virtually impossible to\n"+
+							"guess. Make sure you have an SSH key configured before enabling.\n\n"+
+							"Default: Yes (requires SSH key to be set up already)").
 					Value(&sshCfg.DisablePasswordAuth),
 			),
 			huh.NewGroup(
 				huh.NewInput().
 					Title("SSH port").
-					Description("Change from default 22 to reduce noise.").
+					Description(
+						"Moving SSH off port 22 dramatically reduces automated scan noise.\n"+
+							"Bots overwhelmingly target port 22. This doesn't add real security\n"+
+							"but cuts log spam and reduces attack surface from lazy scanners.\n\n"+
+							"Default: 2222").
 					Value(&sshPort).
 					Validate(func(s string) error {
 						port, err := strconv.Atoi(s)
@@ -147,7 +157,11 @@ func runInit(cmd *cobra.Command, args []string) error {
 			huh.NewGroup(
 				huh.NewInput().
 					Title("Allowed incoming ports").
-					Description("Comma-separated, e.g. 2222/tcp, 80/tcp, 443/tcp").
+					Description(
+						"UFW will block all incoming traffic by default and only allow the\n"+
+							"ports listed here. You need at least your SSH port to stay connected.\n"+
+							"Add 80/tcp and 443/tcp if you're running a web server.\n\n"+
+							"Format: comma-separated, e.g. 2222/tcp, 80/tcp, 443/tcp").
 					Value(&portsStr).
 					Validate(func(s string) error {
 						if strings.TrimSpace(s) == "" {
@@ -159,8 +173,11 @@ func runInit(cmd *cobra.Command, args []string) error {
 			huh.NewGroup(
 				huh.NewConfirm().
 					Title("Rate-limit SSH port?").
-					Description("Limits connection attempts to prevent brute force.").
-					Inline(true).
+					Description(
+						"UFW rate limiting allows max 6 connections in 30 seconds from a\n"+
+							"single IP. Connections beyond that are dropped. This slows down\n"+
+							"brute-force attacks without affecting normal usage.\n\n"+
+							"Default: Yes").
 					Value(&ufwCfg.RateLimitSSH),
 			),
 		)
@@ -171,7 +188,11 @@ func runInit(cmd *cobra.Command, args []string) error {
 			huh.NewGroup(
 				huh.NewInput().
 					Title("Max retries before ban").
-					Description("Number of failed attempts before an IP is banned.").
+					Description(
+						"After this many failed SSH login attempts from a single IP, fail2ban\n"+
+							"will ban the IP. Lower values are more aggressive but could lock out\n"+
+							"legitimate users who mistype their password.\n\n"+
+							"Default: 3 (good balance between security and usability)").
 					Value(&maxRetryStr).
 					Validate(func(s string) error {
 						n, err := strconv.Atoi(s)
@@ -184,7 +205,11 @@ func runInit(cmd *cobra.Command, args []string) error {
 			huh.NewGroup(
 				huh.NewInput().
 					Title("Ban time (seconds)").
-					Description("How long to ban an IP. 3600 = 1 hour, 86400 = 1 day.").
+					Description(
+						"How long a banned IP stays blocked. Longer bans are more punishing\n"+
+							"to attackers but also to anyone accidentally banned. The IP is\n"+
+							"automatically unbanned after this time.\n\n"+
+							"Default: 86400 (24 hours). Common values: 3600 = 1h, 86400 = 1d").
 					Value(&banTimeStr).
 					Validate(func(s string) error {
 						n, err := strconv.Atoi(s)
@@ -202,14 +227,20 @@ func runInit(cmd *cobra.Command, args []string) error {
 			huh.NewGroup(
 				huh.NewConfirm().
 					Title("Enable automatic reboot when required?").
-					Description("Some updates need a reboot. This allows it at a set time.").
-					Inline(true).
+					Description(
+						"Some security updates (especially kernel patches) only take effect\n"+
+							"after a reboot. Enabling this lets the system reboot automatically\n"+
+							"at a scheduled time instead of running with unpatched vulnerabilities.\n\n"+
+							"Default: No (you may prefer to reboot manually during maintenance)").
 					Value(&upgCfg.AutoReboot),
 			),
 			huh.NewGroup(
 				huh.NewInput().
 					Title("Reboot time (HH:MM)").
-					Description("When to reboot if needed. Choose a low-traffic time.").
+					Description(
+						"If auto-reboot is enabled, the system will reboot at this time when\n"+
+							"a reboot is needed. Pick a low-traffic window to minimize disruption.\n\n"+
+							"Default: 02:00 (2 AM server time)").
 					Value(&upgCfg.RebootTime),
 			),
 		)
